@@ -1,0 +1,20 @@
+[package]
+name = "sneklsp"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sneklsp"
+path = "src/main.rs"
+
+[dependencies]
+sneklsp_text.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
