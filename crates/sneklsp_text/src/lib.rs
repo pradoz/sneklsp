@@ -1,10 +1,10 @@
-mod size;
-mod range;
 mod line_index;
+mod range;
+mod size;
 
-pub use size::TextSize;
-pub use range::TextRange;
 pub use line_index::{LineIndex, Position};
+pub use range::TextRange;
+pub use size::TextSize;
 
 #[cfg(test)]
 mod tests {

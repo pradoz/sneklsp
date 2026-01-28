@@ -37,6 +37,10 @@ fn main() -> Result<()> {
             tracing::info!(?file, "Parsing file");
             // let source = fs::read_
         }
+        Some(Commands::Tokenize { file }) => {
+            tracing::info!(?file, "Tokenizing file");
+            // let source = fs::read_
+        }
         Some(Commands::Check { file }) => {
             tracing::info!(?file, "Checking file");
             println!("Checker not yet implemented");

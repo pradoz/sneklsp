@@ -14,7 +14,10 @@ impl TextRange {
     }
 
     pub const fn empty(offset: TextSize) -> Self {
-        Self { start: offset, end: offset }
+        Self {
+            start: offset,
+            end: offset,
+        }
     }
 
     pub const fn start(self) -> TextSize {
