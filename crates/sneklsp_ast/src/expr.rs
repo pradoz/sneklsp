@@ -119,8 +119,8 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompareExpr {
     pub left: Box<Expression>,
-    pub op: CompareOp,
-    pub right: Box<Expression>,
+    pub op: Vec<CompareOp>,
+    pub comparators: Vec<Expression>,
     pub range: TextRange,
 }
 
