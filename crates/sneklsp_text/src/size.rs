@@ -47,3 +47,9 @@ impl Sub for TextSize {
         Self(self.0 - rhs.0)
     }
 }
+
+impl std::fmt::Display for TextSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
