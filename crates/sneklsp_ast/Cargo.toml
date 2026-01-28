@@ -1,0 +1,13 @@
+[package]
+name = "sneklsp_ast"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sneklsp_text.workspace = true
+compact_str.workspace = true
+
+[lints]
+workspace = true

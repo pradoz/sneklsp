@@ -12,12 +12,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Lsp,
-    Parse {
-        file: std::path::PathBuf,
-    },
-    Check {
-        file: std::path::PathBuf,
-    },
+    Parse { file: std::path::PathBuf },
+    Tokenize { file: std::path::PathBuf },
+    Check { file: std::path::PathBuf },
 }
 
 fn main() -> Result<()> {
@@ -38,7 +35,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Parse { file }) => {
             tracing::info!(?file, "Parsing file");
-            println!("Parser not yet implemented");
+            // let source = fs::read_
         }
         Some(Commands::Check { file }) => {
             tracing::info!(?file, "Checking file");

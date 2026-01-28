@@ -1,23 +1,19 @@
 [package]
-name = "sneklsp"
+name = "sneklsp_parser"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "sneklsp"
-path = "src/main.rs"
-
 [dependencies]
 sneklsp_text.workspace = true
 sneklsp_lexer.workspace = true
 sneklsp_ast.workspace = true
-sneklsp_parser.workspace = true
-anyhow.workspace = true
-clap.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
+compact_str.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
 
 [lints]
 workspace = true
