@@ -56,4 +56,29 @@ mod tests {
         let module = parse("1 + 2 * 3").unwrap();
         assert_eq!(module.body.len(), 1);
     }
+
+    mod snapshot {
+        use super::*;
+
+        #[test]
+        fn parse_simple_expressions() {
+            let source = include_str!("../../../testdata/simple/expressions.py");
+            let result = parse(source);
+            insta::assert_debug_snapshot!(result);
+        }
+
+        #[test]
+        fn parse_simple_functions() {
+            let source = include_str!("../../../testdata/simple/functions.py");
+            let result = parse(source);
+            insta::assert_debug_snapshot!(result);
+        }
+
+        #[test]
+        fn parse_simple_hello() {
+            let source = include_str!("../../../testdata/simple/hello.py");
+            let result = parse(source);
+            insta::assert_debug_snapshot!(result);
+        }
+    }
 }

@@ -1,3 +1,5 @@
+use std::fs;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -35,15 +37,49 @@ fn main() -> Result<()> {
         }
         Some(Commands::Parse { file }) => {
             tracing::info!(?file, "Parsing file");
-            // let source = fs::read_
+            let source = fs::read_to_string(&file)?;
+
+            match sneklsp_parser::parse(&source) {
+                Ok(module) => {
+                    println!("Parsed module '{module:#?}'");
+                }
+                Err(e) => {
+                    eprintln!("Parse error: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
         Some(Commands::Tokenize { file }) => {
             tracing::info!(?file, "Tokenizing file");
-            // let source = fs::read_
+            let source = fs::read_to_string(&file)?;
+            let tokens = sneklsp_lexer::tokenize(&source);
+
+            for token in tokens {
+                let start = token.range.start();
+                let end = token.range.end();
+                let text = &source[start.to_usize()..end.to_usize()];
+                println!(
+                    "{:?} {:?} @ {}..{}",
+                    token.kind,
+                    text,
+                    start.to_u32(),
+                    end.to_u32(),
+                );
+            }
         }
         Some(Commands::Check { file }) => {
             tracing::info!(?file, "Checking file");
-            println!("Checker not yet implemented");
+            let source = fs::read_to_string(&file)?;
+
+            match sneklsp_parser::parse(&source) {
+                Ok(module) => {
+                    println!("[+] {} ({} statements)", file.display(), module.body.len());
+                }
+                Err(e) => {
+                    eprintln!("[-] {}: {e}", file.display());
+                    std::process::exit(1);
+                }
+            }
         }
         None => {
             println!("sneklsp v{}", env!("CARGO_PKG_VERSION"));

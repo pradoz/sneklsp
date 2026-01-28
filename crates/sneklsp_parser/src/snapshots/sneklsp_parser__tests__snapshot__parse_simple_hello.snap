@@ -1,0 +1,241 @@
+---
+source: crates/sneklsp_parser/src/lib.rs
+expression: result
+---
+Ok(
+    Module {
+        body: [
+            FunctionDef(
+                FunctionDef {
+                    name: "greet",
+                    params: [
+                        Parameter {
+                            name: "name",
+                            annotation: Some(
+                                Name(
+                                    NameExpr {
+                                        id: "str",
+                                        range: TextRange {
+                                            start: TextSize(
+                                                16,
+                                            ),
+                                            end: TextSize(
+                                                19,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ),
+                            default: None,
+                            range: TextRange {
+                                start: TextSize(
+                                    10,
+                                ),
+                                end: TextSize(
+                                    19,
+                                ),
+                            },
+                        },
+                    ],
+                    body: [
+                        Return(
+                            ReturnStmt {
+                                value: Some(
+                                    String(
+                                        StringExpr {
+                                            value: "\"Hello, {name}!",
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    40,
+                                                ),
+                                                end: TextSize(
+                                                    57,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                ),
+                                range: TextRange {
+                                    start: TextSize(
+                                        33,
+                                    ),
+                                    end: TextSize(
+                                        59,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    returns: Some(
+                        Name(
+                            NameExpr {
+                                id: "str",
+                                range: TextRange {
+                                    start: TextSize(
+                                        24,
+                                    ),
+                                    end: TextSize(
+                                        27,
+                                    ),
+                                },
+                            },
+                        ),
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            0,
+                        ),
+                        end: TextSize(
+                            59,
+                        ),
+                    },
+                },
+            ),
+            If(
+                IfStmt {
+                    test: Compare(
+                        CompareExpr {
+                            left: Name(
+                                NameExpr {
+                                    id: "__name__",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            62,
+                                        ),
+                                        end: TextSize(
+                                            70,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: [
+                                Eq,
+                            ],
+                            comparators: [
+                                String(
+                                    StringExpr {
+                                        value: "__main__",
+                                        range: TextRange {
+                                            start: TextSize(
+                                                74,
+                                            ),
+                                            end: TextSize(
+                                                84,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    62,
+                                ),
+                                end: TextSize(
+                                    84,
+                                ),
+                            },
+                        },
+                    ),
+                    body: [
+                        Expr(
+                            ExprStmt {
+                                value: Call(
+                                    CallExpr {
+                                        func: Name(
+                                            NameExpr {
+                                                id: "print",
+                                                range: TextRange {
+                                                    start: TextSize(
+                                                        90,
+                                                    ),
+                                                    end: TextSize(
+                                                        95,
+                                                    ),
+                                                },
+                                            },
+                                        ),
+                                        args: [
+                                            Call(
+                                                CallExpr {
+                                                    func: Name(
+                                                        NameExpr {
+                                                            id: "greet",
+                                                            range: TextRange {
+                                                                start: TextSize(
+                                                                    96,
+                                                                ),
+                                                                end: TextSize(
+                                                                    101,
+                                                                ),
+                                                            },
+                                                        },
+                                                    ),
+                                                    args: [
+                                                        String(
+                                                            StringExpr {
+                                                                value: "World",
+                                                                range: TextRange {
+                                                                    start: TextSize(
+                                                                        102,
+                                                                    ),
+                                                                    end: TextSize(
+                                                                        109,
+                                                                    ),
+                                                                },
+                                                            },
+                                                        ),
+                                                    ],
+                                                    range: TextRange {
+                                                        start: TextSize(
+                                                            96,
+                                                        ),
+                                                        end: TextSize(
+                                                            110,
+                                                        ),
+                                                    },
+                                                },
+                                            ),
+                                        ],
+                                        range: TextRange {
+                                            start: TextSize(
+                                                90,
+                                            ),
+                                            end: TextSize(
+                                                111,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                range: TextRange {
+                                    start: TextSize(
+                                        90,
+                                    ),
+                                    end: TextSize(
+                                        112,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    orelse: [],
+                    range: TextRange {
+                        start: TextSize(
+                            59,
+                        ),
+                        end: TextSize(
+                            112,
+                        ),
+                    },
+                },
+            ),
+        ],
+        range: TextRange {
+            start: TextSize(
+                0,
+            ),
+            end: TextSize(
+                112,
+            ),
+        },
+    },
+)

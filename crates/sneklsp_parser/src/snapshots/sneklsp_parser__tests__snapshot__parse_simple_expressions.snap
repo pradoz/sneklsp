@@ -1,0 +1,1096 @@
+---
+source: crates/sneklsp_parser/src/lib.rs
+expression: result
+---
+Ok(
+    Module {
+        body: [
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "x",
+                                range: TextRange {
+                                    start: TextSize(
+                                        20,
+                                    ),
+                                    end: TextSize(
+                                        21,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Int(
+                        IntExpr {
+                            value: 1,
+                            range: TextRange {
+                                start: TextSize(
+                                    24,
+                                ),
+                                end: TextSize(
+                                    25,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            20,
+                        ),
+                        end: TextSize(
+                            26,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "y",
+                                range: TextRange {
+                                    start: TextSize(
+                                        26,
+                                    ),
+                                    end: TextSize(
+                                        27,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Float(
+                        FloatExpr {
+                            value: 2.5,
+                            range: TextRange {
+                                start: TextSize(
+                                    30,
+                                ),
+                                end: TextSize(
+                                    33,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            26,
+                        ),
+                        end: TextSize(
+                            34,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "z",
+                                range: TextRange {
+                                    start: TextSize(
+                                        34,
+                                    ),
+                                    end: TextSize(
+                                        35,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: String(
+                        StringExpr {
+                            value: "hello",
+                            range: TextRange {
+                                start: TextSize(
+                                    38,
+                                ),
+                                end: TextSize(
+                                    45,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            34,
+                        ),
+                        end: TextSize(
+                            46,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "a",
+                                range: TextRange {
+                                    start: TextSize(
+                                        67,
+                                    ),
+                                    end: TextSize(
+                                        68,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: BinOp(
+                        BinOpExpr {
+                            left: Int(
+                                IntExpr {
+                                    value: 1,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            71,
+                                        ),
+                                        end: TextSize(
+                                            72,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: Add,
+                            right: Int(
+                                IntExpr {
+                                    value: 2,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            75,
+                                        ),
+                                        end: TextSize(
+                                            76,
+                                        ),
+                                    },
+                                },
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    71,
+                                ),
+                                end: TextSize(
+                                    76,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            67,
+                        ),
+                        end: TextSize(
+                            77,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "b",
+                                range: TextRange {
+                                    start: TextSize(
+                                        77,
+                                    ),
+                                    end: TextSize(
+                                        78,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: BinOp(
+                        BinOpExpr {
+                            left: BinOp(
+                                BinOpExpr {
+                                    left: Int(
+                                        IntExpr {
+                                            value: 3,
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    81,
+                                                ),
+                                                end: TextSize(
+                                                    82,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                    op: Mult,
+                                    right: Int(
+                                        IntExpr {
+                                            value: 4,
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    85,
+                                                ),
+                                                end: TextSize(
+                                                    86,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                    range: TextRange {
+                                        start: TextSize(
+                                            81,
+                                        ),
+                                        end: TextSize(
+                                            86,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: Sub,
+                            right: Int(
+                                IntExpr {
+                                    value: 5,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            89,
+                                        ),
+                                        end: TextSize(
+                                            90,
+                                        ),
+                                    },
+                                },
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    81,
+                                ),
+                                end: TextSize(
+                                    90,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            77,
+                        ),
+                        end: TextSize(
+                            91,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "c",
+                                range: TextRange {
+                                    start: TextSize(
+                                        91,
+                                    ),
+                                    end: TextSize(
+                                        92,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: BinOp(
+                        BinOpExpr {
+                            left: Int(
+                                IntExpr {
+                                    value: 10,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            95,
+                                        ),
+                                        end: TextSize(
+                                            97,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: Div,
+                            right: Int(
+                                IntExpr {
+                                    value: 2,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            100,
+                                        ),
+                                        end: TextSize(
+                                            101,
+                                        ),
+                                    },
+                                },
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    95,
+                                ),
+                                end: TextSize(
+                                    101,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            91,
+                        ),
+                        end: TextSize(
+                            102,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "d",
+                                range: TextRange {
+                                    start: TextSize(
+                                        102,
+                                    ),
+                                    end: TextSize(
+                                        103,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: BinOp(
+                        BinOpExpr {
+                            left: Int(
+                                IntExpr {
+                                    value: 7,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            106,
+                                        ),
+                                        end: TextSize(
+                                            107,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: FloorDiv,
+                            right: Int(
+                                IntExpr {
+                                    value: 3,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            111,
+                                        ),
+                                        end: TextSize(
+                                            112,
+                                        ),
+                                    },
+                                },
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    106,
+                                ),
+                                end: TextSize(
+                                    112,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            102,
+                        ),
+                        end: TextSize(
+                            113,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "e",
+                                range: TextRange {
+                                    start: TextSize(
+                                        113,
+                                    ),
+                                    end: TextSize(
+                                        114,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: BinOp(
+                        BinOpExpr {
+                            left: Int(
+                                IntExpr {
+                                    value: 8,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            117,
+                                        ),
+                                        end: TextSize(
+                                            118,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: Mod,
+                            right: Int(
+                                IntExpr {
+                                    value: 3,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            121,
+                                        ),
+                                        end: TextSize(
+                                            122,
+                                        ),
+                                    },
+                                },
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    117,
+                                ),
+                                end: TextSize(
+                                    122,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            113,
+                        ),
+                        end: TextSize(
+                            123,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "f",
+                                range: TextRange {
+                                    start: TextSize(
+                                        123,
+                                    ),
+                                    end: TextSize(
+                                        124,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: BinOp(
+                        BinOpExpr {
+                            left: Int(
+                                IntExpr {
+                                    value: 2,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            127,
+                                        ),
+                                        end: TextSize(
+                                            128,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: Pow,
+                            right: Int(
+                                IntExpr {
+                                    value: 10,
+                                    range: TextRange {
+                                        start: TextSize(
+                                            132,
+                                        ),
+                                        end: TextSize(
+                                            134,
+                                        ),
+                                    },
+                                },
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    127,
+                                ),
+                                end: TextSize(
+                                    134,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            123,
+                        ),
+                        end: TextSize(
+                            135,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "g",
+                                range: TextRange {
+                                    start: TextSize(
+                                        149,
+                                    ),
+                                    end: TextSize(
+                                        150,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Compare(
+                        CompareExpr {
+                            left: Name(
+                                NameExpr {
+                                    id: "x",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            153,
+                                        ),
+                                        end: TextSize(
+                                            154,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: [
+                                Lt,
+                            ],
+                            comparators: [
+                                Name(
+                                    NameExpr {
+                                        id: "y",
+                                        range: TextRange {
+                                            start: TextSize(
+                                                157,
+                                            ),
+                                            end: TextSize(
+                                                158,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    153,
+                                ),
+                                end: TextSize(
+                                    158,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            149,
+                        ),
+                        end: TextSize(
+                            159,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "h",
+                                range: TextRange {
+                                    start: TextSize(
+                                        159,
+                                    ),
+                                    end: TextSize(
+                                        160,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Compare(
+                        CompareExpr {
+                            left: Name(
+                                NameExpr {
+                                    id: "x",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            163,
+                                        ),
+                                        end: TextSize(
+                                            164,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: [
+                                Eq,
+                            ],
+                            comparators: [
+                                Int(
+                                    IntExpr {
+                                        value: 1,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                168,
+                                            ),
+                                            end: TextSize(
+                                                169,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    163,
+                                ),
+                                end: TextSize(
+                                    169,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            159,
+                        ),
+                        end: TextSize(
+                            170,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "i",
+                                range: TextRange {
+                                    start: TextSize(
+                                        170,
+                                    ),
+                                    end: TextSize(
+                                        171,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Compare(
+                        CompareExpr {
+                            left: Name(
+                                NameExpr {
+                                    id: "y",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            174,
+                                        ),
+                                        end: TextSize(
+                                            175,
+                                        ),
+                                    },
+                                },
+                            ),
+                            op: [
+                                NotEq,
+                            ],
+                            comparators: [
+                                Name(
+                                    NameExpr {
+                                        id: "z",
+                                        range: TextRange {
+                                            start: TextSize(
+                                                179,
+                                            ),
+                                            end: TextSize(
+                                                180,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    174,
+                                ),
+                                end: TextSize(
+                                    180,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            170,
+                        ),
+                        end: TextSize(
+                            181,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "my_list",
+                                range: TextRange {
+                                    start: TextSize(
+                                        194,
+                                    ),
+                                    end: TextSize(
+                                        201,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: List(
+                        ListExpr {
+                            elts: [
+                                Int(
+                                    IntExpr {
+                                        value: 1,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                205,
+                                            ),
+                                            end: TextSize(
+                                                206,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                Int(
+                                    IntExpr {
+                                        value: 2,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                208,
+                                            ),
+                                            end: TextSize(
+                                                209,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                Int(
+                                    IntExpr {
+                                        value: 3,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                211,
+                                            ),
+                                            end: TextSize(
+                                                212,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    204,
+                                ),
+                                end: TextSize(
+                                    213,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            194,
+                        ),
+                        end: TextSize(
+                            214,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "my_dict",
+                                range: TextRange {
+                                    start: TextSize(
+                                        214,
+                                    ),
+                                    end: TextSize(
+                                        221,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Dict(
+                        DictExpr {
+                            keys: [
+                                Some(
+                                    String(
+                                        StringExpr {
+                                            value: "a",
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    225,
+                                                ),
+                                                end: TextSize(
+                                                    228,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                ),
+                                Some(
+                                    String(
+                                        StringExpr {
+                                            value: "b",
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    233,
+                                                ),
+                                                end: TextSize(
+                                                    236,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                ),
+                            ],
+                            values: [
+                                Int(
+                                    IntExpr {
+                                        value: 1,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                230,
+                                            ),
+                                            end: TextSize(
+                                                231,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                Int(
+                                    IntExpr {
+                                        value: 2,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                238,
+                                            ),
+                                            end: TextSize(
+                                                239,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    224,
+                                ),
+                                end: TextSize(
+                                    240,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            214,
+                        ),
+                        end: TextSize(
+                            241,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "my_tuple",
+                                range: TextRange {
+                                    start: TextSize(
+                                        241,
+                                    ),
+                                    end: TextSize(
+                                        249,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Tuple(
+                        TupleExpr {
+                            elts: [
+                                Int(
+                                    IntExpr {
+                                        value: 1,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                253,
+                                            ),
+                                            end: TextSize(
+                                                254,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                Int(
+                                    IntExpr {
+                                        value: 2,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                256,
+                                            ),
+                                            end: TextSize(
+                                                257,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                Int(
+                                    IntExpr {
+                                        value: 3,
+                                        range: TextRange {
+                                            start: TextSize(
+                                                259,
+                                            ),
+                                            end: TextSize(
+                                                260,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    252,
+                                ),
+                                end: TextSize(
+                                    261,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            241,
+                        ),
+                        end: TextSize(
+                            262,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "result",
+                                range: TextRange {
+                                    start: TextSize(
+                                        279,
+                                    ),
+                                    end: TextSize(
+                                        285,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Call(
+                        CallExpr {
+                            func: Name(
+                                NameExpr {
+                                    id: "print",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            288,
+                                        ),
+                                        end: TextSize(
+                                            293,
+                                        ),
+                                    },
+                                },
+                            ),
+                            args: [
+                                String(
+                                    StringExpr {
+                                        value: "hello",
+                                        range: TextRange {
+                                            start: TextSize(
+                                                294,
+                                            ),
+                                            end: TextSize(
+                                                301,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            range: TextRange {
+                                start: TextSize(
+                                    288,
+                                ),
+                                end: TextSize(
+                                    302,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            279,
+                        ),
+                        end: TextSize(
+                            303,
+                        ),
+                    },
+                },
+            ),
+        ],
+        range: TextRange {
+            start: TextSize(
+                20,
+            ),
+            end: TextSize(
+                303,
+            ),
+        },
+    },
+)

@@ -204,60 +204,75 @@ impl<'src> Lexer<'src> {
     }
 
     fn handle_indentation(&mut self) -> Option<Token> {
-        let mut indent = 0;
-        let start = self.position;
+        loop {
+            let mut indent = 0;
+            let indent_start = self.position;
 
-        while !self.is_at_end() {
+            // find indentation level
+            while !self.is_at_end() {
+                match self.peek() {
+                    b' ' => {
+                        indent += 1;
+                        self.advance();
+                    }
+                    b'\t' => {
+                        indent += 8 - (indent % 8);
+                        self.advance();
+                    }
+                    _ => break,
+                }
+            }
+
+            // skip commented/blank lines
             match self.peek() {
-                b' ' => {
-                    indent += 1;
-                    self.advance();
-                }
-                b'\t' => {
-                    indent += 8 - (indent % 8);
-                    self.advance();
-                }
                 b'\n' => {
                     self.advance();
-                    self.at_line_start = true;
-                    indent = 0;
+                    continue;
                 }
                 b'#' => {
                     self.skip_comment();
                     if !self.is_at_end() && self.peek() == b'\n' {
                         self.advance();
-                        self.at_line_start = true;
-                        indent = 0;
+                        continue;
+                    }
+                    // comment at EOF
+                    if self.is_at_end() {
+                        return None;
                     }
                 }
-                _ => break,
+                _ => {}
             }
-        }
 
-        if self.is_at_end() {
+            // not blank, not acomment
+            if self.is_at_end() {
+                return None;
+            }
+
+            let current_indent = *self.indent_stack.last().unwrap();
+
+            if indent > current_indent {
+                self.indent_stack.push(indent);
+                return Some(self.make_token(TokenKind::Indent, indent_start, self.position));
+            }
+
+            if indent < current_indent {
+                while let Some(&top) = self.indent_stack.last() {
+                    if top <= indent {
+                        break;
+                    }
+                    self.indent_stack.pop();
+                    self.pending_tokens.push(self.make_token(
+                        TokenKind::Dedent,
+                        indent_start,
+                        self.position,
+                    ));
+                }
+                return self.pending_tokens.pop();
+            }
+
+            // indent == current_indent, no token needed
             return None;
         }
-
-        let current_indent = *self.indent_stack.last().unwrap();
-
-        if indent > current_indent {
-            self.indent_stack.push(indent);
-            return Some(self.make_token(TokenKind::Indent, start, self.position));
-        }
-
-        if indent < current_indent {
-            while let Some(&top) = self.indent_stack.last() {
-                if top <= indent {
-                    break;
-                }
-                self.indent_stack.pop();
-                self.pending_tokens
-                    .push(self.make_token(TokenKind::Dedent, start, self.position));
-            }
-            return self.pending_tokens.pop();
-        }
-
-        None
     }
 
     fn scan_identifier(&mut self, start: usize) -> TokenKind {
@@ -271,6 +286,19 @@ impl<'src> Lexer<'src> {
         }
 
         let text = &self.source[start..self.position];
+
+        // TODO: decide if we should parse expressions inside `{...}`
+        if self.peek() == b'"' || self.peek() == b'\'' {
+            let lower = text.to_lowercase();
+            if matches!(
+                lower.as_str(),
+                "f" | "r" | "b" | "fr" | "rf" | "br" | "rb" | "u"
+            ) {
+                let quote = self.advance();
+                return self.scan_string(quote);
+            }
+        }
+
         TokenKind::from_keyword(text).unwrap_or(TokenKind::Name)
     }
 
