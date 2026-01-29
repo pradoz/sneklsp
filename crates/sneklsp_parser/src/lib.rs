@@ -30,35 +30,65 @@ pub fn parse<'ast>(source: &str, arena: &'ast AstArena) -> ParseResult<Module<'a
 
 pub fn parse_and_collect_errors(source: &str) -> Vec<ParseError> {
     let arena = AstArena::new();
-    match Parser::new(source, &arena).parse_module() {
-        Ok(_) => vec![],
-        Err(e) => vec![e],
-    }
+    let mut parser = Parser::new(source, &arena).parse_module();
+    parser.parse_module_collecting_errors()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_simple_assignment() {
-        let arena = AstArena::new();
-        let module = parse("x = 1", &arena).unwrap();
-        assert_eq!(module.body.len(), 1);
+    mod parse {
+        use super::*;
+
+        #[test]
+        fn simple_assignment() {
+            let arena = AstArena::new();
+            let module = parse("x = 1", &arena).unwrap();
+            assert_eq!(module.body.len(), 1);
+        }
+
+        #[test]
+        fn function() {
+            let arena = AstArena::new();
+            let module = parse("def foo():\n    pass", &arena).unwrap();
+            assert_eq!(module.body.len(), 1);
+        }
+
+        #[test]
+        fn expression() {
+            let arena = AstArena::new();
+            let module = parse("1 + 2 * 3", &arena).unwrap();
+            assert_eq!(module.body.len(), 1);
+        }
     }
 
-    #[test]
-    fn parse_function() {
-        let arena = AstArena::new();
-        let module = parse("def foo():\n    pass", &arena).unwrap();
-        assert_eq!(module.body.len(), 1);
-    }
+    mod collect_errors {
+        use super::*;
 
-    #[test]
-    fn parse_expression() {
-        let arena = AstArena::new();
-        let module = parse("1 + 2 * 3", &arena).unwrap();
-        assert_eq!(module.body.len(), 1);
+        #[test]
+        fn on_valid_syntax() {
+            let errors = parse_and_collect_errors("x = 1");
+            assert!(errors.is_empty());
+        }
+
+        #[test]
+        fn on_invalid_syntax() {
+            let errors = parse_and_collect_errors("def foo(");
+            assert!(!errors.is_empty());
+        }
+
+        #[test]
+        fn multiple_errors() {
+            let source = "x = 1 +\ny = 2 +\nz = 3";
+            let errors = parse_and_collect_errors(source);
+            assert!(!errors.is_empty());
+            assert!(
+                errors.len() >= 2,
+                "expected multiple errors, got {}",
+                errors.len()
+            );
+        }
     }
 
     mod snapshot {

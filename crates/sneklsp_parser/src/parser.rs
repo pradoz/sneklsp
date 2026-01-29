@@ -10,7 +10,11 @@ pub struct Parser<'src, 'ast> {
     lexer: Lexer<'src>,
     current: Token,
     previous: Token,
+    errors: Vec<ParseError>,
+    max_errors: usize,
 }
+
+const DEFAULT_MAX_ERRORS: usize = 100;
 
 impl<'src, 'ast> Parser<'src, 'ast> {
     pub fn new(source: &'src str, arena: &'ast AstArena) -> Self {
@@ -24,6 +28,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             lexer,
             current,
             previous,
+            errors: Vec::new(),
+            max_errors: DEFAULT_MAX_ERRORS,
         }
     }
 
@@ -47,6 +53,93 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             body: self.arena.alloc_slice(body),
             range: TextRange::new(start, end),
         })
+    }
+
+    pub fn parse_module_collecting_errors(&mut self) -> Vec<ParseError> {
+        let _ = self.parse_module_with_recovery();
+        std::mem::take(&mut self.errors)
+    }
+
+    fn parse_module_with_recovery(&mut self) -> Module<'ast> {
+        let start = self.current.range.start();
+        let mut body = Vec::new();
+
+        while !self.is_at_end() && self.errors.len() < self.max_errors {
+            while self.check(TokenKind::Newline) {
+                self.advance();
+            }
+            if self.is_at_end() {
+                break;
+            }
+
+            match self.parse_statement() {
+                Ok(stmt) => body.push(stmt),
+                Err(e) => {
+                    self.errors.push(e);
+                    self.synchronize();
+                }
+            }
+        }
+
+        let end = self.previous.range.end();
+        Module {
+            body: self.arena.alloc_slice(body),
+            range: TextRange::new(start, end),
+        }
+    }
+
+    fn synchronize(&mut self) {
+        // skip tokens until we find a statement boundary
+        while !self.is_at_end() {
+            if self.previous.kind == TokenKind::Newline {
+                if self.is_statement_start() {
+                    return;
+                }
+            }
+
+            // statement boundary check
+            match self.current.kind {
+                TokenKind::Def
+                | TokenKind::Class
+                | TokenKind::If
+                | TokenKind::For
+                | TokenKind::While
+                | TokenKind::Return
+                | TokenKind::Import
+                | TokenKind::From
+                | TokenKind::Pass
+                | TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::Dedent => return,
+                _ => {}
+            }
+
+            self.advance();
+        }
+    }
+
+    fn is_statement_start(&self) -> bool {
+        matches!(
+            self.current.kind,
+            TokenKind::Def
+                | TokenKind::Class
+                | TokenKind::If
+                | TokenKind::For
+                | TokenKind::While
+                | TokenKind::Return
+                | TokenKind::Import
+                | TokenKind::From
+                | TokenKind::Pass
+                | TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::Name
+                | TokenKind::Int
+                | TokenKind::Float
+                | TokenKind::String
+                | TokenKind::LParen
+                | TokenKind::LBracket
+                | TokenKind::LBrace
+        )
     }
 
     fn parse_statement(&mut self) -> ParseResult<Statement<'ast>> {
