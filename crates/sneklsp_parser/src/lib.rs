@@ -1,6 +1,6 @@
 mod parser;
 
-use sneklsp_ast::Module;
+use sneklsp_ast::{AstArena, Module};
 use sneklsp_text::TextSize;
 use thiserror::Error;
 
@@ -24,15 +24,8 @@ pub enum ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
-pub fn parse(source: &str) -> ParseResult<Module> {
-    Parser::new(source).parse_module()
-}
-
-pub fn parse_with_errors(source: &str) -> (Option<Module>, Vec<ParseError>) {
-    match parse(source) {
-        Ok(module) => (Some(module), vec![]),
-        Err(e) => (None, vec![e]),
-    }
+pub fn parse<'ast>(source: &str, arena: &'ast AstArena) -> ParseResult<Module<'ast>> {
+    Parser::new(source, arena).parse_module()
 }
 
 #[cfg(test)]
@@ -41,19 +34,22 @@ mod tests {
 
     #[test]
     fn parse_simple_assignment() {
-        let module = parse("x = 1").unwrap();
+        let arena = AstArena::new();
+        let module = parse("x = 1", &arena).unwrap();
         assert_eq!(module.body.len(), 1);
     }
 
     #[test]
     fn parse_function() {
-        let module = parse("def foo():\n    pass").unwrap();
+        let arena = AstArena::new();
+        let module = parse("def foo():\n    pass", &arena).unwrap();
         assert_eq!(module.body.len(), 1);
     }
 
     #[test]
     fn parse_expression() {
-        let module = parse("1 + 2 * 3").unwrap();
+        let arena = AstArena::new();
+        let module = parse("1 + 2 * 3", &arena).unwrap();
         assert_eq!(module.body.len(), 1);
     }
 
@@ -62,22 +58,25 @@ mod tests {
 
         #[test]
         fn parse_simple_expressions() {
+            let arena = AstArena::new();
             let source = include_str!("../../../testdata/simple/expressions.py");
-            let result = parse(source);
+            let result = parse(source, &arena);
             insta::assert_debug_snapshot!(result);
         }
 
         #[test]
         fn parse_simple_functions() {
+            let arena = AstArena::new();
             let source = include_str!("../../../testdata/simple/functions.py");
-            let result = parse(source);
+            let result = parse(source, &arena);
             insta::assert_debug_snapshot!(result);
         }
 
         #[test]
         fn parse_simple_hello() {
+            let arena = AstArena::new();
             let source = include_str!("../../../testdata/simple/hello.py");
-            let result = parse(source);
+            let result = parse(source, &arena);
             insta::assert_debug_snapshot!(result);
         }
     }

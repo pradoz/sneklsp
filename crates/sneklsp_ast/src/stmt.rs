@@ -1,25 +1,25 @@
-use crate::{Expression, Identifier};
+use crate::{BinOp, Expression, Identifier};
 use sneklsp_text::TextRange;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Statement {
-    FunctionDef(FunctionDef),
-    ClassDef(ClassDef),
-    Return(ReturnStmt),
-    Assign(AssignStmt),
-    AugAssign(AugAssignStmt),
-    If(IfStmt),
-    For(ForStmt),
-    While(WhileStmt),
-    Import(ImportStmt),
-    ImportFrom(ImportFromStmt),
-    Expr(ExprStmt),
-    Pass(PassStmt),
-    Break(BreakStmt),
-    Continue(ContinueStmt),
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Statement<'ast> {
+    FunctionDef(&'ast FunctionDef<'ast>),
+    ClassDef(&'ast ClassDef<'ast>),
+    Return(&'ast ReturnStmt<'ast>),
+    Assign(&'ast AssignStmt<'ast>),
+    AugAssign(&'ast AugAssignStmt<'ast>),
+    If(&'ast IfStmt<'ast>),
+    For(&'ast ForStmt<'ast>),
+    While(&'ast WhileStmt<'ast>),
+    Import(&'ast ImportStmt<'ast>),
+    ImportFrom(&'ast ImportFromStmt<'ast>),
+    Expr(&'ast ExprStmt<'ast>),
+    Pass(&'ast PassStmt),
+    Break(&'ast BreakStmt),
+    Continue(&'ast ContinueStmt),
 }
 
-impl Statement {
+impl<'ast> Statement<'ast> {
     pub const fn range(&self) -> TextRange {
         match self {
             Statement::FunctionDef(s) => s.range,
@@ -40,115 +40,115 @@ impl Statement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionDef {
-    pub name: Identifier,
-    pub params: Vec<Parameter>,
-    pub body: Vec<Statement>,
-    pub returns: Option<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FunctionDef<'ast> {
+    pub name: Identifier<'ast>,
+    pub params: &'ast [Parameter<'ast>],
+    pub body: &'ast [Statement<'ast>],
+    pub returns: Option<Expression<'ast>>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Parameter {
-    pub name: Identifier,
-    pub annotation: Option<Expression>,
-    pub default: Option<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Parameter<'ast> {
+    pub name: Identifier<'ast>,
+    pub annotation: Option<Expression<'ast>>,
+    pub default: Option<Expression<'ast>>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ClassDef {
-    pub name: Identifier,
-    pub bases: Vec<Expression>,
-    pub body: Vec<Statement>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClassDef<'ast> {
+    pub name: Identifier<'ast>,
+    pub bases: &'ast [Expression<'ast>],
+    pub body: &'ast [Statement<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ReturnStmt {
-    pub value: Option<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReturnStmt<'ast> {
+    pub value: Option<Expression<'ast>>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AssignStmt {
-    pub targets: Vec<Expression>,
-    pub value: Expression,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AssignStmt<'ast> {
+    pub targets: &'ast [Expression<'ast>],
+    pub value: Expression<'ast>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AugAssignStmt {
-    pub target: Expression,
-    pub op: crate::BinOp,
-    pub value: Expression,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AugAssignStmt<'ast> {
+    pub target: Expression<'ast>,
+    pub op: BinOp,
+    pub value: Expression<'ast>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct IfStmt {
-    pub test: Expression,
-    pub body: Vec<Statement>,
-    pub orelse: Vec<Statement>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IfStmt<'ast> {
+    pub test: Expression<'ast>,
+    pub body: &'ast [Statement<'ast>],
+    pub orelse: &'ast [Statement<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ForStmt {
-    pub target: Expression,
-    pub iter: Expression,
-    pub body: Vec<Statement>,
-    pub orelse: Vec<Statement>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ForStmt<'ast> {
+    pub target: Expression<'ast>,
+    pub iter: Expression<'ast>,
+    pub body: &'ast [Statement<'ast>],
+    pub orelse: &'ast [Statement<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct WhileStmt {
-    pub test: Expression,
-    pub body: Vec<Statement>,
-    pub orelse: Vec<Statement>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WhileStmt<'ast> {
+    pub test: Expression<'ast>,
+    pub body: &'ast [Statement<'ast>],
+    pub orelse: &'ast [Statement<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ImportStmt {
-    pub names: Vec<Alias>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImportStmt<'ast> {
+    pub names: &'ast [Alias<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ImportFromStmt {
-    pub module: Option<Identifier>,
-    pub names: Vec<Alias>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImportFromStmt<'ast> {
+    pub module: Option<Identifier<'ast>>,
+    pub names: &'ast [Alias<'ast>],
     pub level: u32,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Alias {
-    pub name: Identifier,
-    pub asname: Option<Identifier>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Alias<'ast> {
+    pub name: Identifier<'ast>,
+    pub asname: Option<Identifier<'ast>>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExprStmt {
-    pub value: Expression,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExprStmt<'ast> {
+    pub value: Expression<'ast>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PassStmt {
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BreakStmt {
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ContinueStmt {
     pub range: TextRange,
 }

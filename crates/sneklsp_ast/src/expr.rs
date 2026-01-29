@@ -1,26 +1,26 @@
 use crate::Identifier;
 use sneklsp_text::TextRange;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
-    Name(NameExpr),
-    Int(IntExpr),
-    Float(FloatExpr),
-    String(StringExpr),
-    Bool(BoolExpr),
-    None(NoneExpr),
-    BinOp(BinOpExpr),
-    UnaryOp(UnaryOpExpr),
-    Compare(CompareExpr),
-    Call(CallExpr),
-    Attribute(AttributeExpr),
-    Subscript(SubscriptExpr),
-    List(ListExpr),
-    Tuple(TupleExpr),
-    Dict(DictExpr),
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Expression<'ast> {
+    Name(&'ast NameExpr<'ast>),
+    Int(&'ast IntExpr),
+    Float(&'ast FloatExpr),
+    String(&'ast StringExpr<'ast>),
+    Bool(&'ast BoolExpr),
+    None(&'ast NoneExpr),
+    BinOp(&'ast BinOpExpr<'ast>),
+    UnaryOp(&'ast UnaryOpExpr<'ast>),
+    Compare(&'ast CompareExpr<'ast>),
+    Call(&'ast CallExpr<'ast>),
+    Attribute(&'ast AttributeExpr<'ast>),
+    Subscript(&'ast SubscriptExpr<'ast>),
+    List(&'ast ListExpr<'ast>),
+    Tuple(&'ast TupleExpr<'ast>),
+    Dict(&'ast DictExpr<'ast>),
 }
 
-impl Expression {
+impl<'ast> Expression<'ast> {
     pub const fn range(&self) -> TextRange {
         match self {
             Expression::Name(e) => e.range,
@@ -42,46 +42,46 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct NameExpr {
-    pub id: Identifier,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NameExpr<'ast> {
+    pub id: Identifier<'ast>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IntExpr {
     pub value: i64,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatExpr {
     pub value: f64,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct StringExpr {
-    pub value: String,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StringExpr<'ast> {
+    pub value: &'ast str,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoolExpr {
     pub value: bool,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NoneExpr {
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct BinOpExpr {
-    pub left: Box<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BinOpExpr<'ast> {
+    pub left: Expression<'ast>,
     pub op: BinOp,
-    pub right: Box<Expression>,
+    pub right: Expression<'ast>,
     pub range: TextRange,
 }
 
@@ -101,10 +101,10 @@ pub enum BinOp {
     RShift,   // >>
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct UnaryOpExpr {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnaryOpExpr<'ast> {
     pub op: UnaryOp,
-    pub operand: Box<Expression>,
+    pub operand: Expression<'ast>,
     pub range: TextRange,
 }
 
@@ -116,11 +116,11 @@ pub enum UnaryOp {
     Invert, // ~
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CompareExpr {
-    pub left: Box<Expression>,
-    pub op: Vec<CompareOp>,
-    pub comparators: Vec<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CompareExpr<'ast> {
+    pub left: Expression<'ast>,
+    pub op: &'ast [CompareOp],
+    pub comparators: &'ast [Expression<'ast>],
     pub range: TextRange,
 }
 
@@ -138,42 +138,42 @@ pub enum CompareOp {
     NotIn, // not in
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CallExpr {
-    pub func: Box<Expression>,
-    pub args: Vec<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CallExpr<'ast> {
+    pub func: Expression<'ast>,
+    pub args: &'ast [Expression<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AttributeExpr {
-    pub value: Box<Expression>,
-    pub attr: Identifier,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AttributeExpr<'ast> {
+    pub value: Expression<'ast>,
+    pub attr: Identifier<'ast>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct SubscriptExpr {
-    pub value: Box<Expression>,
-    pub slice: Box<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SubscriptExpr<'ast> {
+    pub value: Expression<'ast>,
+    pub slice: Expression<'ast>,
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ListExpr {
-    pub elts: Vec<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ListExpr<'ast> {
+    pub elts: &'ast [Expression<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct TupleExpr {
-    pub elts: Vec<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TupleExpr<'ast> {
+    pub elts: &'ast [Expression<'ast>],
     pub range: TextRange,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct DictExpr {
-    pub keys: Vec<Option<Expression>>,
-    pub values: Vec<Expression>,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DictExpr<'ast> {
+    pub keys: &'ast [Option<Expression<'ast>>],
+    pub values: &'ast [Expression<'ast>],
     pub range: TextRange,
 }

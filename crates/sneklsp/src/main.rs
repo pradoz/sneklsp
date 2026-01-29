@@ -2,6 +2,7 @@ use std::fs;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use sneklsp_ast::AstArena;
 
 #[derive(Parser)]
 #[command(name = "sneklsp")]
@@ -38,8 +39,9 @@ fn main() -> Result<()> {
         Some(Commands::Parse { file }) => {
             tracing::info!(?file, "Parsing file");
             let source = fs::read_to_string(&file)?;
+            let arena = AstArena::new();
 
-            match sneklsp_parser::parse(&source) {
+            match sneklsp_parser::parse(&source, &arena) {
                 Ok(module) => {
                     println!("Parsed module '{module:#?}'");
                 }
@@ -70,8 +72,9 @@ fn main() -> Result<()> {
         Some(Commands::Check { file }) => {
             tracing::info!(?file, "Checking file");
             let source = fs::read_to_string(&file)?;
+            let arena = AstArena::new();
 
-            match sneklsp_parser::parse(&source) {
+            match sneklsp_parser::parse(&source, &arena) {
                 Ok(module) => {
                     println!("[+] {} ({} statements)", file.display(), module.body.len());
                 }

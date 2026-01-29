@@ -17,6 +17,7 @@ impl TextSize {
         self.0
     }
 
+    #[inline]
     pub const fn to_usize(self) -> usize {
         self.0 as usize
     }
