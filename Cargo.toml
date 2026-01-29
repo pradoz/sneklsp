@@ -16,12 +16,16 @@ sneklsp_parser = { path = "crates/sneklsp_parser" }
 
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
-compact_str = "0.8"
+compact_str = "0.9"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 insta = "1.42"
+
+bumpalo = "3.16"
+dhat = "0.3"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"
