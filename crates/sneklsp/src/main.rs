@@ -21,21 +21,24 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
-        .with_writer(std::io::stderr)
-        .init();
-
     let cli = Cli::parse();
 
     match cli.command {
         Some(Commands::Lsp) => {
-            tracing::info!("Starting sneklsp server...");
-            println!("LSP server not yet implemented");
+            tracing::info!("starting sneklsp server...");
+            // log to stderr so it doesn't interefere with protocol
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::from_default_env()
+                        .add_directive(tracing::Level::DEBUG.into()),
+                )
+                .with_writer(std::io::stderr)
+                .with_ansi(false)
+                .init();
+
+            sneklsp_server::run_server()?;
         }
+
         Some(Commands::Parse { file }) => {
             tracing::info!(?file, "Parsing file");
             let source = fs::read_to_string(&file)?;
@@ -51,6 +54,7 @@ fn main() -> Result<()> {
                 }
             }
         }
+
         Some(Commands::Tokenize { file }) => {
             tracing::info!(?file, "Tokenizing file");
             let source = fs::read_to_string(&file)?;
@@ -69,6 +73,7 @@ fn main() -> Result<()> {
                 );
             }
         }
+
         Some(Commands::Check { file }) => {
             tracing::info!(?file, "Checking file");
             let source = fs::read_to_string(&file)?;
@@ -84,6 +89,7 @@ fn main() -> Result<()> {
                 }
             }
         }
+
         None => {
             println!("sneklsp v{}", env!("CARGO_PKG_VERSION"));
             println!("Run `sneklsp --help` for usage");

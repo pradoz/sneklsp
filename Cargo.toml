@@ -13,18 +13,23 @@ sneklsp_text = { path = "crates/sneklsp_text" }
 sneklsp_lexer = { path = "crates/sneklsp_lexer" }
 sneklsp_ast = { path = "crates/sneklsp_ast" }
 sneklsp_parser = { path = "crates/sneklsp_parser" }
+sneklsp_server = { path = "crates/sneklsp_server" }
 
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
-compact_str = "0.9"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-insta = "1.42"
-criterion = { version = "0.5", features = ["html_reports"] }
+lsp-server = "0.7"
+lsp-types = "0.97"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 bumpalo = "3.16"
+
+insta = "1.42"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

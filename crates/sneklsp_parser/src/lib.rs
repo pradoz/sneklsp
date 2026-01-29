@@ -28,6 +28,14 @@ pub fn parse<'ast>(source: &str, arena: &'ast AstArena) -> ParseResult<Module<'a
     Parser::new(source, arena).parse_module()
 }
 
+pub fn parse_and_collect_errors(source: &str) -> Vec<ParseError> {
+    let arena = AstArena::new();
+    match Parser::new(source, &arena).parse_module() {
+        Ok(_) => vec![],
+        Err(e) => vec![e],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

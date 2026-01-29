@@ -9,7 +9,6 @@ license.workspace = true
 sneklsp_text.workspace = true
 sneklsp_lexer.workspace = true
 sneklsp_ast.workspace = true
-compact_str.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

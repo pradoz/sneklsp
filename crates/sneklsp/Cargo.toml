@@ -14,6 +14,7 @@ sneklsp_text.workspace = true
 sneklsp_lexer.workspace = true
 sneklsp_ast.workspace = true
 sneklsp_parser.workspace = true
+sneklsp_server.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tracing.workspace = true
