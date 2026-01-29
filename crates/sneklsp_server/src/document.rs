@@ -1,3 +1,4 @@
+use lsp_types::TextDocumentContentChangeEvent;
 use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
 
@@ -21,7 +22,50 @@ impl Document {
         }
     }
 
-    pub fn update(&mut self, content: String, version: i32) {
+    pub fn apply_changes(&mut self, changes: Vec<TextDocumentContentChangeEvent>, version: i32) {
+        for change in changes {
+            self.apply_change(change);
+        }
+        self.version = version;
+        self.line_index = LineIndex::new(&self.content);
+        self.errors = Self::parse_content(&self.content);
+    }
+
+    fn apply_change(&self, change: TextDocumentContentChangeEvent) {
+        match change.range {
+            // incremental content change
+            Some(range) => {
+                let start_offset = self.line_index.offset(sneklsp_text::Position {
+                    line: range.start.line,
+                    column: range.start.character,
+                });
+                let end_offset = self.line_index.offset(sneklsp_text::Position {
+                    line: range.end.line,
+                    column: range.end.character,
+                });
+
+                if let (Some(start), Some(end)) = (start_offset, end_offset) {
+                    let start = start.to_usize();
+                    let end = end.to_usize();
+
+                    // bounds check
+                    if start <= end && end <= self.content.len() {
+                        self.content.replace_range(start..end, &change.text);
+                    } else {
+                        tracing::warn!("invalid change range. using full replacement");
+                        self.content = change.text;
+                    }
+                } else {
+                    tracing::warn!("couldn't compute offsets. using full replacement");
+                    self.content = change.text;
+                }
+            }
+            // full content change
+            None => todo!(),
+        }
+    }
+
+    pub fn replace_content(&mut self, content: String, version: i32) {
         self.content = content;
         self.version = version;
         self.line_index = LineIndex::new(&self.content);
@@ -30,6 +74,10 @@ impl Document {
 
     fn parse_content(content: &str) -> Vec<ParseError> {
         sneklsp_parser::parse_and_collect_errors(content)
+    }
+
+    pub fn content(&self) -> &str {
+        &self.content
     }
 
     pub fn has_errors(&self) -> bool {

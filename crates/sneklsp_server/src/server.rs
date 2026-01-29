@@ -8,11 +8,11 @@ use lsp_types::notification::{
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    InitializeParams, InitializeResult, PublishDiagnosticsParams, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+    InitializeParams, InitializeResult, PublishDiagnosticsParams, SaveOptions, ServerCapabilities,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
 };
 
-use crate::diagnostics::to_diagnostics;
+use crate::diagnostics::{self, to_diagnostics};
 use crate::document::Document;
 
 pub fn run_server() -> Result<()> {
@@ -28,7 +28,15 @@ pub fn run_server() -> Result<()> {
     tracing::debug!(?init_params);
 
     let capabilities = ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        text_document_sync: Some(TextDocumentSyncCapability::Options(
+            TextDocumentSyncOptions {
+                open_close: Some(true),
+                change: Some(TextDocumentSyncKind::INCREMENTAL),
+                will_save: Some(false),
+                will_save_wait_until: Some(false),
+                save: Some(SaveOptions::default().into()),
+            },
+        )),
         ..Default::default()
     };
 
@@ -139,7 +147,6 @@ impl Server {
         let uri = params.text_document.uri;
         let version = params.text_document.version;
 
-        // TODO: async handling of partial content?
         let content = params
             .content_changes
             .into_iter()
@@ -149,17 +156,25 @@ impl Server {
 
         tracing::debug!(?uri, version, "document changed");
 
-        let diagnostics = {
-            let document = self
-                .documents
-                .entry(uri.clone())
-                .or_insert_with(|| Document::new(String::new(), 0));
-            document.update(content, version);
+        let diagnostics = if let Some(document) = self.documents.get_mut(&uri) {
+            document.apply_changes(params.content_changes, version);
             to_diagnostics(&document.errors, &document.line_index)
+        } else {
+            // fall back to using full content from last change
+            let content = params
+                .content_changes
+                .into_iter()
+                .last()
+                .map(|c| c.text)
+                .unwrap_or_default();
+
+            let doc = Document::new(content, version);
+            let diagnostics = to_diagnostics(&doc.errors, &doc.line_index);
+            self.documents.insert(uri.clone(), doc);
+            diagnostics
         };
 
         self.send_diagnostics(&uri, diagnostics);
-
         Ok(())
     }
 
