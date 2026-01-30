@@ -1,10 +1,7 @@
 # intentional errors for testing diagnostics
 
-# Diagnostics:
-# 1. expected identifier, found Newline
 # missing closing paren
-def broken_function():
-    pass
+def broken_function(x
 
 # missing operand
 x = 1 +
