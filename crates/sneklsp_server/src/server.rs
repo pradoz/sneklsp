@@ -12,7 +12,7 @@ use lsp_types::{
     ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
 };
 
-use crate::diagnostics::{self, to_diagnostics};
+use crate::diagnostics::to_diagnostics;
 use crate::document::Document;
 
 pub fn run_server() -> Result<()> {
@@ -146,13 +146,6 @@ impl Server {
     fn on_did_change(&mut self, params: DidChangeTextDocumentParams) -> Result<()> {
         let uri = params.text_document.uri;
         let version = params.text_document.version;
-
-        let content = params
-            .content_changes
-            .into_iter()
-            .next()
-            .map(|c| c.text)
-            .unwrap_or_default();
 
         tracing::debug!(?uri, version, "document changed");
 

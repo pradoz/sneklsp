@@ -31,7 +31,7 @@ impl Document {
         self.errors = Self::parse_content(&self.content);
     }
 
-    fn apply_change(&self, change: TextDocumentContentChangeEvent) {
+    fn apply_change(&mut self, change: TextDocumentContentChangeEvent) {
         match change.range {
             // incremental content change
             Some(range) => {

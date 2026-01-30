@@ -30,7 +30,7 @@ pub fn parse<'ast>(source: &str, arena: &'ast AstArena) -> ParseResult<Module<'a
 
 pub fn parse_and_collect_errors(source: &str) -> Vec<ParseError> {
     let arena = AstArena::new();
-    let mut parser = Parser::new(source, &arena).parse_module();
+    let mut parser = Parser::new(source, &arena);
     parser.parse_module_collecting_errors()
 }
 
