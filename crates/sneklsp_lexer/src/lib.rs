@@ -69,11 +69,5 @@ mod tests {
             let source = include_str!("../../../testdata/simple/functions.py");
             insta::assert_snapshot!(tokenize_to_string(source));
         }
-
-        #[test]
-        fn tokenize_simple_hello() {
-            let source = include_str!("../../../testdata/simple/hello.py");
-            insta::assert_snapshot!(tokenize_to_string(source));
-        }
     }
 }

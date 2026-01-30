@@ -3,7 +3,7 @@ use sneklsp_ast::AstArena;
 
 const SIMPLE_EXPR: &str = include_str!("../../../testdata/simple/expressions.py");
 const SIMPLE_FUNCTION: &str = include_str!("../../../testdata/simple/functions.py");
-const HELLO_WORLD: &str = include_str!("../../../testdata/simple/hello.py");
+const SIMPLE_500_LINES: &str = include_str!("../../../testdata/simple/500lines.py");
 const ERRORS: &str = include_str!("../../../testdata/simple/errors.py");
 
 fn bench_parse(c: &mut Criterion) {
@@ -21,10 +21,10 @@ fn bench_parse(c: &mut Criterion) {
         b.iter(|| sneklsp_parser::parse(black_box(SIMPLE_FUNCTION), &arena));
     });
 
-    group.throughput(Throughput::Bytes(HELLO_WORLD.len() as u64));
-    group.bench_function("hello_world", |b| {
+    group.throughput(Throughput::Bytes(SIMPLE_500_LINES.len() as u64));
+    group.bench_function("500_lines", |b| {
         let arena = AstArena::new();
-        b.iter(|| sneklsp_parser::parse(black_box(HELLO_WORLD), &arena));
+        b.iter(|| sneklsp_parser::parse(black_box(SIMPLE_500_LINES), &arena));
     });
 
     group.finish();
@@ -39,14 +39,14 @@ fn bench_parse_with_errors(c: &mut Criterion) {
         b.iter(|| sneklsp_parser::parse(black_box(ERRORS), &arena));
     });
 
-    group.throughput(Throughput::Bytes(SIMPLE_FUNCTION.len() as u64));
+    group.throughput(Throughput::Bytes(SIMPLE_500_LINES.len() as u64));
     group.bench_function("valid_file_error_mode", |b| {
         let arena = AstArena::new();
-        b.iter(|| sneklsp_parser::parse(black_box(SIMPLE_FUNCTION), &arena));
+        b.iter(|| sneklsp_parser::parse(black_box(SIMPLE_500_LINES), &arena));
     });
 
     group.finish();
 }
 
-criterion_group!(benches, bench_parse);
+criterion_group!(benches, bench_parse, bench_parse_with_errors);
 criterion_main!(benches);

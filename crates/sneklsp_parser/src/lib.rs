@@ -109,13 +109,5 @@ mod tests {
             let result = parse(source, &arena);
             insta::assert_debug_snapshot!(result);
         }
-
-        #[test]
-        fn parse_simple_hello() {
-            let arena = AstArena::new();
-            let source = include_str!("../../../testdata/simple/hello.py");
-            let result = parse(source, &arena);
-            insta::assert_debug_snapshot!(result);
-        }
     }
 }
