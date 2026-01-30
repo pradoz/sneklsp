@@ -1,3 +1,4 @@
+mod background;
 mod diagnostics;
 mod document;
 mod server;

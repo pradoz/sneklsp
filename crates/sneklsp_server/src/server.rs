@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use crossbeam_channel::select;
 use lsp_server::{Connection, Message, Notification, Request};
 use lsp_types::notification::{
     DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
@@ -12,6 +13,7 @@ use lsp_types::{
     ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
 };
 
+use crate::background::{BackgroundParser, ParseResult};
 use crate::diagnostics::to_diagnostics;
 use crate::document::Document;
 
@@ -61,9 +63,15 @@ pub fn run_server() -> Result<()> {
     Ok(())
 }
 
+struct DocumentState {
+    document: Document,
+    pending_request_id: Option<u64>,
+}
+
 struct Server {
     connection: Connection,
-    documents: HashMap<Uri, Document>,
+    documents: HashMap<Uri, DocumentState>,
+    parser: BackgroundParser,
 }
 
 impl Server {
@@ -71,6 +79,7 @@ impl Server {
         Self {
             connection,
             documents: HashMap::new(),
+            parser: BackgroundParser::new(),
         }
     }
 
@@ -78,22 +87,91 @@ impl Server {
         tracing::info!("server main loop starting");
 
         loop {
-            let msg = self.connection.receiver.recv()?;
-            match msg {
-                Message::Request(req) => {
-                    if self.connection.handle_shutdown(&req)? {
-                        tracing::info!("received shutdown request");
-                        return Ok(());
+            select! {
+                // handle incoming LSP requests
+                recv(self.connection.receiver) -> msg => {
+                    match msg {
+                        Ok(Message::Request(req)) => {
+                            if self.connection.handle_shutdown(&req)? {
+                                tracing::info!("received shutdown request");
+                                return Ok(());
+                            }
+                            self.handle_request(req)?;
+                        }
+                        Ok(Message::Response(resp)) => {
+                            tracing::debug!(?resp, "received response");
+                        }
+                        Ok(Message::Notification(notif)) => {
+                            self.handle_notification(notif)?;
+                        }
+                        Err(e) => {
+                            tracing::error!(?e, "error receiving message");
+                            return Err(e.into());
+                        }
                     }
-                    self.handle_request(req)?;
                 }
-                Message::Response(resp) => {
-                    tracing::debug!(?resp, "received response");
-                }
-                Message::Notification(notif) => {
-                    self.handle_notification(notif)?;
+
+                // handle parse results from background thread
+                recv(self.parser.results()) -> result => {
+                    if let Ok(result) = result {
+                        self.handle_parse_result(result);
+                    }
                 }
             }
+        }
+    }
+
+    fn handle_parse_result(&mut self, result: ParseResult) {
+        let ParseResult {
+            uri,
+            version,
+            errors,
+            line_index,
+            request_id,
+        } = result;
+
+        if let Some(state) = self.documents.get(&uri) {
+            // document might have changed since parse was requested
+            if state.document.version != version {
+                tracing::debug!(
+                    ?uri,
+                    result_version = version,
+                    current_version = state.document.version,
+                    "ignoring stale parse result"
+                );
+                return;
+            }
+
+            // ignore if newer parse request is pending
+            if let Some(pending_id) = state.pending_request_id {
+                if pending_id > request_id {
+                    tracing::debug!(
+                        ?uri,
+                        request_id,
+                        pending_id,
+                        "ignoring superseded parse result"
+                    );
+                    return;
+                }
+            }
+        } else {
+            tracing::debug!(?uri, "ignoring parse result for closed document");
+            return;
+        }
+
+        tracing::debug!(
+            ?uri,
+            version,
+            error_count = errors.len(),
+            "publishing diagnostics"
+        );
+
+        let diagnostics = to_diagnostics(&errors, &line_index);
+        self.send_diagnostics(&uri, diagnostics);
+
+        // clear pending request
+        if let Some(state) = self.documents.get_mut(&uri) {
+            state.pending_request_id = None;
         }
     }
 
@@ -136,9 +214,17 @@ impl Server {
 
         tracing::info!(?uri, "document openened");
 
-        let document = Document::new(content, version);
-        self.publish_diagnostics(&uri, &document);
-        self.documents.insert(uri, document);
+        let document = Document::new(content.clone(), version);
+
+        // submit for background parsing
+        let request_id = self.parser.parse(uri.clone(), content, version);
+        self.documents.insert(
+            uri,
+            DocumentState {
+                document,
+                pending_request_id: request_id,
+            },
+        );
 
         Ok(())
     }
@@ -149,9 +235,15 @@ impl Server {
 
         tracing::debug!(?uri, version, "document changed");
 
-        let diagnostics = if let Some(document) = self.documents.get_mut(&uri) {
-            document.apply_changes(params.content_changes, version);
-            to_diagnostics(&document.errors, &document.line_index)
+        if let Some(state) = self.documents.get_mut(&uri) {
+            state
+                .document
+                .apply_changes(params.content_changes, version);
+
+            // submit updated content for backgroun parsing
+            let content = state.document.content_clone();
+            let request_id = self.parser.parse(uri.clone(), content, version);
+            state.pending_request_id = request_id;
         } else {
             // fall back to using full content from last change
             let content = params
@@ -161,13 +253,18 @@ impl Server {
                 .map(|c| c.text)
                 .unwrap_or_default();
 
-            let doc = Document::new(content, version);
-            let diagnostics = to_diagnostics(&doc.errors, &doc.line_index);
-            self.documents.insert(uri.clone(), doc);
-            diagnostics
+            let document = Document::new(content.clone(), version);
+            let request_id = self.parser.parse(uri.clone(), content, version);
+
+            self.documents.insert(
+                uri,
+                DocumentState {
+                    document,
+                    pending_request_id: request_id,
+                },
+            );
         };
 
-        self.send_diagnostics(&uri, diagnostics);
         Ok(())
     }
 
@@ -179,11 +276,6 @@ impl Server {
         self.documents.remove(&uri);
         self.send_diagnostics(&uri, vec![]);
         Ok(())
-    }
-
-    fn publish_diagnostics(&self, uri: &Uri, document: &Document) {
-        let diagnostics = to_diagnostics(&document.errors, &document.line_index);
-        self.send_diagnostics(uri, diagnostics);
     }
 
     fn send_diagnostics(&self, uri: &Uri, diagnostics: Vec<lsp_types::Diagnostic>) {
