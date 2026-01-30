@@ -17,13 +17,18 @@ impl<'src> Lexer<'src> {
             source,
             bytes: source.as_bytes(),
             position: 0,
-            indent_stack: vec![0],
-            pending_tokens: Vec::new(),
+            indent_stack: {
+                let mut v = Vec::with_capacity(16);
+                v.push(0);
+                v
+            },
+            pending_tokens: Vec::with_capacity(8),
             at_line_start: true,
             done: false,
         }
     }
 
+    #[inline]
     pub fn next_token(&mut self) -> Token {
         if let Some(token) = self.pending_tokens.pop() {
             return token;
@@ -275,6 +280,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    #[inline]
     fn scan_identifier(&mut self, start: usize) -> TokenKind {
         while !self.is_at_end() {
             match self.peek() {
@@ -302,6 +308,7 @@ impl<'src> Lexer<'src> {
         TokenKind::from_keyword(text).unwrap_or(TokenKind::Name)
     }
 
+    #[inline]
     fn scan_number(&mut self, _start: usize) -> TokenKind {
         self.skip_digits(); // scan integer
 
@@ -331,6 +338,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    #[inline]
     fn skip_digits(&mut self) {
         while !self.is_at_end() && self.peek().is_ascii_digit() {
             self.advance();
@@ -384,6 +392,7 @@ impl<'src> Lexer<'src> {
         TokenKind::String
     }
 
+    #[inline]
     fn skip_whitespace(&mut self) {
         while !self.is_at_end() {
             match self.peek() {
@@ -400,6 +409,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    #[inline]
     fn skip_comment(&mut self) {
         if !self.is_at_end() && self.peek() == b'#' {
             while !self.is_at_end() && self.peek() != b'\n' {
@@ -408,6 +418,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    #[inline]
     fn make_token(&self, kind: TokenKind, start: usize, end: usize) -> Token {
         Token::new(
             kind,
@@ -415,24 +426,29 @@ impl<'src> Lexer<'src> {
         )
     }
 
+    #[inline]
     fn is_at_end(&self) -> bool {
         self.position >= self.bytes.len()
     }
 
+    #[inline]
     fn peek(&self) -> u8 {
         self.bytes.get(self.position).copied().unwrap_or(0)
     }
 
+    #[inline]
     fn peek_next(&self) -> u8 {
         self.bytes.get(self.position + 1).copied().unwrap_or(0)
     }
 
+    #[inline]
     fn advance(&mut self) -> u8 {
         let byte = self.peek();
         self.position += 1;
         byte
     }
 
+    #[inline]
     fn match_byte(&mut self, expected: u8) -> bool {
         if self.peek() == expected {
             self.advance();
@@ -446,6 +462,7 @@ impl<'src> Lexer<'src> {
 impl Iterator for Lexer<'_> {
     type Item = Token;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let token = self.next_token();
         if token.kind == TokenKind::Eof {

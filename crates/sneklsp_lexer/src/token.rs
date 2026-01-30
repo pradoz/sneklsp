@@ -2,7 +2,7 @@ use sneklsp_text::TextRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
-    // id?
+    // id
     Name,
 
     // literals
@@ -106,6 +106,7 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    #[inline]
     pub fn from_keyword(text: &str) -> Option<Self> {
         let kind = match text {
             "and" => Self::And,
@@ -148,6 +149,7 @@ impl TokenKind {
         Some(kind)
     }
 
+    #[inline]
     pub const fn is_keyword(self) -> bool {
         matches!(
             self,
@@ -197,6 +199,7 @@ pub struct Token {
 }
 
 impl Token {
+    #[inline]
     pub const fn new(kind: TokenKind, range: TextRange) -> Self {
         Self { kind, range }
     }

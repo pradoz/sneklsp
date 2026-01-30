@@ -22,6 +22,7 @@ pub struct ParseResult {
     pub errors: Vec<ParseError>,
     pub line_index: LineIndex,
     pub request_id: u64,
+    pub content: String,
 }
 
 pub struct BackgroundParser {
@@ -51,6 +52,7 @@ impl BackgroundParser {
         }
     }
 
+    #[inline]
     pub fn parse(&self, uri: Uri, content: String, version: i32) -> Option<u64> {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
 
@@ -78,10 +80,12 @@ impl BackgroundParser {
         }
     }
 
+    #[inline]
     pub fn try_recv(&self) -> Option<ParseResult> {
         self.result_rx.try_recv().ok()
     }
 
+    #[inline]
     pub fn results(&self) -> &Receiver<ParseResult> {
         &self.result_rx
     }
@@ -115,6 +119,7 @@ impl BackgroundParser {
                 errors,
                 line_index,
                 request_id: request.request_id,
+                content: request.content,
             };
 
             if result_tx.try_send(result).is_err() {

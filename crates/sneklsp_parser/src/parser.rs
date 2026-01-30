@@ -17,6 +17,7 @@ pub struct Parser<'src, 'ast> {
 const DEFAULT_MAX_ERRORS: usize = 100;
 
 impl<'src, 'ast> Parser<'src, 'ast> {
+    #[inline]
     pub fn new(source: &'src str, arena: &'ast AstArena) -> Self {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
@@ -35,7 +36,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
 
     pub fn parse_module(&mut self) -> ParseResult<Module<'ast>> {
         let start = self.current.range.start();
-        let mut body = Vec::new();
+        let mut body = Vec::with_capacity(32);
 
         while !self.is_at_end() {
             while self.check(TokenKind::Newline) {
@@ -1173,20 +1174,24 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 
     // utility methods
+    #[inline]
     fn token_text(&self) -> &str {
         let range = self.current.range;
         &self.source[range.start().to_usize()..range.end().to_usize()]
     }
 
+    #[inline]
     fn advance(&mut self) {
         self.previous = self.current.clone();
         self.current = self.lexer.next_token();
     }
 
+    #[inline]
     fn check(&self, kind: TokenKind) -> bool {
         self.current.kind == kind
     }
 
+    #[inline]
     fn match_token(&mut self, kind: TokenKind) -> bool {
         if self.check(kind) {
             self.advance();
@@ -1196,6 +1201,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
     }
 
+    #[inline]
     fn expect(&mut self, kind: TokenKind) -> ParseResult<()> {
         if self.check(kind) {
             self.advance();
@@ -1209,6 +1215,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
     }
 
+    #[inline]
     fn expect_newline_or_eof(&mut self) -> ParseResult<()> {
         if self.check(TokenKind::Newline) {
             self.advance();
@@ -1224,6 +1231,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
     }
 
+    #[inline]
     fn is_at_end(&self) -> bool {
         self.current.kind == TokenKind::Eof
     }

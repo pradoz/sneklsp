@@ -9,6 +9,7 @@ pub struct Document {
 }
 
 impl Document {
+    #[inline]
     pub fn new(content: String, version: i32) -> Self {
         let line_index = LineIndex::new(&content);
         Self {
@@ -56,16 +57,37 @@ impl Document {
                 }
             }
             // full content change
-            None => todo!(),
+            None => {
+                self.content = change.text;
+            }
         }
     }
 
+    #[inline]
     pub fn content(&self) -> &str {
         &self.content
     }
 
-    pub fn content_clone(&self) -> String {
-        // take ownership of the content string for background parsing
-        self.content.clone()
+    #[inline]
+    pub fn set_content(&mut self, content: String) {
+        self.content = content;
+        self.line_index = LineIndex::new(&self.content);
+    }
+
+    #[inline]
+    pub fn take_content(&mut self) -> String {
+        std::mem::take(&mut self.content)
+    }
+
+    #[inline]
+    pub fn take_for_parsing(&mut self) -> (String, i32) {
+        (std::mem::take(&mut self.content), self.version)
+    }
+}
+
+impl From<(String, i32)> for Document {
+    #[inline]
+    fn from((content, version): (String, i32)) -> Self {
+        Self::new(content, version)
     }
 }

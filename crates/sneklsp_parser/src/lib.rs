@@ -24,12 +24,15 @@ pub enum ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
+#[inline]
 pub fn parse<'ast>(source: &str, arena: &'ast AstArena) -> ParseResult<Module<'ast>> {
     Parser::new(source, arena).parse_module()
 }
 
 pub fn parse_and_collect_errors(source: &str) -> Vec<ParseError> {
-    let arena = AstArena::new();
+    // estimate ~50 bytes of arena per byte of source for python
+    let arena_size = source.len() * 50;
+    let arena = AstArena::with_capacity(arena_size.max(4096));
     let mut parser = Parser::new(source, &arena);
     parser.parse_module_collecting_errors()
 }

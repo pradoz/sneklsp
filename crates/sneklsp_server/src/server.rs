@@ -128,9 +128,15 @@ impl Server {
             errors,
             line_index,
             request_id,
+            content,
         } = result;
 
-        if let Some(state) = self.documents.get(&uri) {
+        if let Some(state) = self.documents.get_mut(&uri) {
+            // restore content if versions match
+            if state.document.version == version {
+                state.document.set_content(content);
+            }
+
             // document might have changed since parse was requested
             if state.document.version != version {
                 tracing::debug!(
@@ -214,9 +220,8 @@ impl Server {
 
         tracing::info!(?uri, "document openened");
 
-        let document = Document::new(content.clone(), version);
-
-        // submit for background parsing
+        // submit for background parsing. content is restored when result arrives
+        let document = Document::new(String::new(), version);
         let request_id = self.parser.parse(uri.clone(), content, version);
         self.documents.insert(
             uri,
@@ -241,7 +246,7 @@ impl Server {
                 .apply_changes(params.content_changes, version);
 
             // submit updated content for backgroun parsing
-            let content = state.document.content_clone();
+            let content = state.document.take_content();
             let request_id = self.parser.parse(uri.clone(), content, version);
             state.pending_request_id = request_id;
         } else {
@@ -253,7 +258,7 @@ impl Server {
                 .map(|c| c.text)
                 .unwrap_or_default();
 
-            let document = Document::new(content.clone(), version);
+            let document = Document::new(String::new(), version);
             let request_id = self.parser.parse(uri.clone(), content, version);
 
             self.documents.insert(
@@ -278,6 +283,7 @@ impl Server {
         Ok(())
     }
 
+    #[inline]
     fn send_diagnostics(&self, uri: &Uri, diagnostics: Vec<lsp_types::Diagnostic>) {
         let params = PublishDiagnosticsParams {
             uri: uri.clone(),

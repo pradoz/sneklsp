@@ -2,13 +2,16 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
 
+#[inline]
 pub fn to_diagnostics(errors: &[ParseError], line_index: &LineIndex) -> Vec<Diagnostic> {
-    errors
-        .iter()
-        .map(|e| to_diagnostic(e, line_index))
-        .collect()
+    let mut diagnostics = Vec::with_capacity(errors.len());
+    for e in errors {
+        diagnostics.push(to_diagnostic(e, line_index));
+    }
+    diagnostics
 }
 
+#[inline]
 fn to_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic {
     let (range, message) = match error {
         ParseError::UnexpectedToken {

@@ -5,10 +5,12 @@ pub struct AstArena {
 }
 
 impl AstArena {
+    #[inline]
     pub fn new() -> Self {
         Self { bump: Bump::new() }
     }
 
+    #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             bump: Bump::with_capacity(capacity),
@@ -34,6 +36,7 @@ impl AstArena {
         self.bump.alloc_str(s)
     }
 
+    #[inline]
     pub fn allocated_bytes(&self) -> usize {
         self.bump.allocated_bytes()
     }

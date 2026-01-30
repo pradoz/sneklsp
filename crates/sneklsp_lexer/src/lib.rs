@@ -5,7 +5,11 @@ pub use lexer::Lexer;
 pub use token::{Token, TokenKind};
 
 pub fn tokenize(source: &str) -> Vec<Token> {
-    Lexer::new(source).collect()
+    // estimate ~10 chars per token on average
+    let estimated_tokens = source.len() / 10;
+    let mut tokens = Vec::with_capacity(estimated_tokens);
+    tokens.extend(Lexer::new(source));
+    tokens
 }
 
 #[cfg(test)]

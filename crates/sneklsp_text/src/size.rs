@@ -5,14 +5,17 @@ use std::ops::{Add, Sub};
 pub struct TextSize(u32);
 
 impl TextSize {
+    #[inline]
     pub const fn new(raw: u32) -> Self {
         Self(raw)
     }
 
+    #[inline]
     pub const fn of(text: &str) -> Self {
         Self(text.len() as u32)
     }
 
+    #[inline]
     pub const fn to_u32(self) -> u32 {
         self.0
     }
