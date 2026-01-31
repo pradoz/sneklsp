@@ -81,11 +81,6 @@ impl BackgroundParser {
     }
 
     #[inline]
-    pub fn try_recv(&self) -> Option<ParseResult> {
-        self.result_rx.try_recv().ok()
-    }
-
-    #[inline]
     pub fn results(&self) -> &Receiver<ParseResult> {
         &self.result_rx
     }

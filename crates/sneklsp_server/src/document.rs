@@ -64,11 +64,6 @@ impl Document {
     }
 
     #[inline]
-    pub fn content(&self) -> &str {
-        &self.content
-    }
-
-    #[inline]
     pub fn set_content(&mut self, content: String) {
         self.content = content;
         self.line_index = LineIndex::new(&self.content);
@@ -77,11 +72,6 @@ impl Document {
     #[inline]
     pub fn take_content(&mut self) -> String {
         std::mem::take(&mut self.content)
-    }
-
-    #[inline]
-    pub fn take_for_parsing(&mut self) -> (String, i32) {
-        (std::mem::take(&mut self.content), self.version)
     }
 }
 
