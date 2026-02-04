@@ -1,5 +1,3 @@
-use std::default;
-
 use crate::{ModuleIndex, ScopeId, ScopeKind, SymbolKind};
 
 use sneklsp_ast::*;

@@ -1,7 +1,5 @@
-use crate::{
-    ModuleIndex, Reference, ReferenceId, Scope, ScopeId, Symbol, SymbolId, SymbolKind, symbol,
-};
-use sneklsp_text::TextSize;
+use crate::{ModuleIndex, ScopeId, Symbol, SymbolKind};
+use sneklsp_text::{TextRange, TextSize};
 
 #[derive(Debug, Clone)]
 pub enum DefinitionResult<'a, 'src> {
@@ -11,15 +9,9 @@ pub enum DefinitionResult<'a, 'src> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReferenceInfo<'a, 'src> {
-    pub reference: &'a Reference<'src>,
-    pub is_definition: bool,
-}
-
-#[derive(Debug, Clone)]
 pub struct ReferenceResult<'a, 'src> {
     pub symbol: &'a Symbol<'src>,
-    pub references: Vec<ReferenceInfo<'a, 'src>>,
+    pub ranges: Vec<TextRange>,
 }
 
 #[derive(Debug)]
@@ -32,11 +24,11 @@ pub struct DocumentSymbol<'a, 'src> {
 #[derive(Debug)]
 pub struct PrepareRenameResult<'a, 'src> {
     pub symbol: &'a Symbol<'src>,
-    pub occurrences: Vec<sneklsp_text::TextRange>,
+    pub occurrences: Vec<TextRange>,
 }
 
 impl<'src> ModuleIndex<'src> {
-    pub fn goto_definition(&self, pos: TextSize) -> Option<DefinitionResult> {
+    pub fn goto_definition(&self, pos: TextSize) -> Option<DefinitionResult<'_, 'src>> {
         // already on a definition
         if let Some(symbol) = self.definition_at(pos) {
             return Some(DefinitionResult::Local(symbol));
@@ -54,7 +46,7 @@ impl<'src> ModuleIndex<'src> {
         }
     }
 
-    pub fn find_references(&self, pos: TextSize) -> Option<ReferenceResult> {
+    pub fn find_references(&self, pos: TextSize) -> Option<ReferenceResult<'_, 'src>> {
         let symbol_id = if let Some(symbol) = self.definition_at(pos) {
             symbol.id
         } else if let Some(reference) = self.reference_at(pos) {
@@ -64,20 +56,9 @@ impl<'src> ModuleIndex<'src> {
         };
 
         let symbol = self.symbol(symbol_id);
-        let mut references = Vec::new();
+        let ranges = self.all_occurrences(symbol_id);
 
-        references.push(ReferenceInfo {
-            reference: &Reference::resolved(
-                ReferenceId::new(u32::MAX), // dummy id for definition
-                symbol.name,
-                symbol.range,
-                symbol_id,
-            ),
-            is_definition: true,
-        });
-
-        // TODO: cannot return temp reference - just return ranges
-        Some(ReferenceResult { symbol, references })
+        Some(ReferenceResult { symbol, ranges })
     }
 
     pub fn document_symbols(&self) -> Vec<DocumentSymbol<'_, 'src>> {
@@ -113,7 +94,7 @@ impl<'src> ModuleIndex<'src> {
         Vec::new()
     }
 
-    pub fn prepare_rename(&self, pos: TextSize) -> Option<PrepareRenameResult> {
+    pub fn prepare_rename(&self, pos: TextSize) -> Option<PrepareRenameResult<'_, 'src>> {
         let symbol_id = if let Some(symbol) = self.definition_at(pos) {
             symbol.id
         } else if let Some(reference) = self.reference_at(pos) {
