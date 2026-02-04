@@ -4,6 +4,8 @@ use std::thread::{self, JoinHandle};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use lsp_types::Uri;
 
+use sneklsp_ast::AstArena;
+use sneklsp_index::ModuleIndex;
 use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
 
@@ -15,7 +17,6 @@ pub struct ParseRequest {
     pub request_id: u64,
 }
 
-#[derive(Debug)]
 pub struct ParseResult {
     pub uri: Uri,
     pub version: i32,
@@ -23,6 +24,53 @@ pub struct ParseResult {
     pub line_index: LineIndex,
     pub request_id: u64,
     pub content: String,
+    pub index: Option<IndexedModule>,
+}
+
+impl std::fmt::Debug for ParseResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParseResult")
+            .field("uri", &self.uri)
+            .field("version", &self.version)
+            .field("errors", &self.errors)
+            .field("has_index", &self.index.is_some())
+            .finish()
+    }
+}
+
+pub struct IndexedModule {
+    pub symbols: Vec<IndexedSymbol>,
+    pub scopes: Vec<IndexedScope>,
+    pub references: Vec<IndexedReference>,
+}
+
+#[derive(Debug)]
+pub struct IndexedSymbol {
+    pub id: u32,
+    pub name: String,
+    pub kind: sneklsp_index::SymbolKind,
+    pub range: sneklsp_text::TextRange,
+    pub selection_range: sneklsp_text::TextRange,
+    pub scope: u32,
+    pub visibility: sneklsp_index::Visibility,
+}
+
+#[derive(Debug)]
+pub struct IndexedScope {
+    pub id: u32,
+    pub kind: sneklsp_index::ScopeKind,
+    pub parent: Option<u32>,
+    pub range: sneklsp_text::TextRange,
+    pub symbols: Vec<u32>,
+    pub children: Vec<u32>,
+}
+
+#[derive(Debug)]
+pub struct IndexedReference {
+    pub id: u32,
+    pub name: String,
+    pub range: sneklsp_text::TextRange,
+    pub resolved: Option<u32>,
 }
 
 pub struct BackgroundParser {
@@ -98,7 +146,19 @@ impl BackgroundParser {
             );
 
             let line_index = LineIndex::new(&request.content);
-            let errors = sneklsp_parser::parse_and_collect_errors(&request.content);
+
+            let arena = AstArena::new();
+            let (errors, index) = match sneklsp_parser::parse(&request.content, &arena) {
+                Ok(module) => {
+                    let idx = sneklsp_index::index_module(&request.content, &module);
+                    let owned_index = Self::to_owned_index(&idx);
+                    (Vec::new(), Some(owned_index))
+                }
+                Err(_) => {
+                    let errors = sneklsp_parser::parse_and_collect_errors(&request.content);
+                    (errors, None)
+                }
+            };
 
             let elapsed = start.elapsed();
             tracing::debug!(
@@ -115,6 +175,7 @@ impl BackgroundParser {
                 line_index,
                 request_id: request.request_id,
                 content: request.content,
+                index,
             };
 
             if result_tx.try_send(result).is_err() {
@@ -122,6 +183,52 @@ impl BackgroundParser {
             }
 
             tracing::info!("parser thread shutting down");
+        }
+    }
+
+    fn to_owned_index(index: &ModuleIndex<'_>) -> IndexedModule {
+        let symbols = index
+            .symbols()
+            .iter()
+            .map(|s| IndexedSymbol {
+                id: s.id.as_u32(),
+                name: s.name.to_string(),
+                kind: s.kind,
+                range: s.range,
+                selection_range: s.selection_range,
+                scope: s.scope.as_u32(),
+                visibility: s.visibility,
+            })
+            .collect();
+
+        let scopes = index
+            .scopes()
+            .iter()
+            .map(|s| IndexedScope {
+                id: s.id.as_u32(),
+                kind: s.kind,
+                parent: s.parent.map(|p| p.as_u32()),
+                range: s.range,
+                symbols: s.symbols.iter().map(|id| id.as_u32()).collect(),
+                children: s.children.iter().map(|id| id.as_u32()).collect(),
+            })
+            .collect();
+
+        let references = index
+            .references()
+            .iter()
+            .map(|r| IndexedReference {
+                id: r.id.as_u32(),
+                name: r.name.to_string(),
+                range: r.range,
+                resolved: r.resolved.map(|id| id.as_u32()),
+            })
+            .collect();
+
+        IndexedModule {
+            symbols,
+            scopes,
+            references,
         }
     }
 }

@@ -2,20 +2,25 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use crossbeam_channel::select;
-use lsp_server::{Connection, Message, Notification, Request};
+use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
     DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
     PublishDiagnostics,
 };
+use lsp_types::request::{
+    DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, References, Rename, Request as _,
+};
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    InitializeParams, InitializeResult, PublishDiagnosticsParams, SaveOptions, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
+    InitializeParams, InitializeResult, OneOf, PublishDiagnosticsParams, SaveOptions,
+    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, Uri,
 };
 
 use crate::background::{BackgroundParser, ParseResult};
 use crate::diagnostics::to_diagnostics;
 use crate::document::Document;
+use crate::handlers;
 
 pub fn run_server() -> Result<()> {
     tracing::info!("starting sneklsp server");
@@ -39,6 +44,11 @@ pub fn run_server() -> Result<()> {
                 save: Some(SaveOptions::default().into()),
             },
         )),
+        document_symbol_provider: Some(OneOf::Left(true)),
+        definition_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
         ..Default::default()
     };
 
@@ -63,9 +73,9 @@ pub fn run_server() -> Result<()> {
     Ok(())
 }
 
-struct DocumentState {
-    document: Document,
-    pending_request_id: Option<u64>,
+pub struct DocumentState {
+    pub document: Document,
+    pub pending_request_id: Option<u64>,
 }
 
 struct Server {
@@ -129,12 +139,19 @@ impl Server {
             line_index,
             request_id,
             content,
+            index,
         } = result;
 
         if let Some(state) = self.documents.get_mut(&uri) {
             // restore content if versions match
             if state.document.version == version {
                 state.document.set_content(content);
+                state.document.line_index = line_index.clone();
+
+                if let Some(idx) = index {
+                    state.document.set_index(idx);
+                    tracing::debug!(?uri, "index updated");
+                }
             }
 
             // document might have changed since parse was requested
@@ -184,7 +201,41 @@ impl Server {
     fn handle_request(&mut self, req: Request) -> Result<()> {
         tracing::debug!(?req.method, "handling request");
 
-        // TODO: handle requests like hover, completion, goto definition, etc.
+        match req.method.as_str() {
+            DocumentSymbolRequest::METHOD => {
+                let (id, params) = cast_request::<DocumentSymbolRequest>(req)?;
+                let result = handlers::handle_document_symbol(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            GotoDefinition::METHOD => {
+                let (id, params) = cast_request::<GotoDefinition>(req)?;
+                let result = handlers::handle_goto_definition(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            References::METHOD => {
+                let (id, params) = cast_request::<References>(req)?;
+                let result = handlers::handle_references(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            Rename::METHOD => {
+                let (id, params) = cast_request::<Rename>(req)?;
+                let result = handlers::handle_rename(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            DocumentHighlightRequest::METHOD => {
+                let (id, params) = cast_request::<DocumentHighlightRequest>(req)?;
+                let result = handlers::handle_document_highlight(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            _ => {
+                tracing::debug!(method = ?req.method, "unhandled request");
+            }
+        }
 
         Ok(())
     }
@@ -297,4 +348,25 @@ impl Server {
             tracing::error!(?e, "failed to send diagnostics");
         }
     }
+
+    #[inline]
+    fn send_response<T: serde::Serialize>(&self, id: RequestId, result: Option<T>) {
+        let response = match result {
+            Some(r) => Response::new_ok(id, serde_json::to_value(r).unwrap()),
+            None => Response::new_ok(id, serde_json::Value::Null),
+        };
+
+        if let Err(e) = self.connection.sender.send(Message::Response(response)) {
+            tracing::error!(?e, "failed to send response");
+        }
+    }
+}
+
+fn cast_request<R>(req: Request) -> Result<(RequestId, R::Params)>
+where
+    R: lsp_types::request::Request,
+    R::Params: serde::de::DeserializeOwned,
+{
+    let params = serde_json::from_value(req.params)?;
+    Ok((req.id, params))
 }

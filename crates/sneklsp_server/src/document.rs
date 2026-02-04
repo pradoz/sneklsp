@@ -1,3 +1,4 @@
+use crate::background::IndexedModule;
 use lsp_types::TextDocumentContentChangeEvent;
 use sneklsp_text::LineIndex;
 
@@ -6,6 +7,7 @@ pub struct Document {
     pub content: String,
     pub line_index: LineIndex,
     pub version: i32,
+    pub index: Option<IndexedModule>,
 }
 
 impl Document {
@@ -16,6 +18,7 @@ impl Document {
             content,
             line_index,
             version,
+            index: None,
         }
     }
 
@@ -25,6 +28,7 @@ impl Document {
         }
         self.version = version;
         self.line_index = LineIndex::new(&self.content);
+        self.index = None;
     }
 
     fn apply_change(&mut self, change: TextDocumentContentChangeEvent) {
@@ -70,8 +74,18 @@ impl Document {
     }
 
     #[inline]
+    pub fn set_index(&mut self, index: IndexedModule) {
+        self.index = Some(index);
+    }
+
+    #[inline]
     pub fn take_content(&mut self) -> String {
         std::mem::take(&mut self.content)
+    }
+
+    #[inline]
+    pub fn has_index(&self) -> bool {
+        self.index.is_some()
     }
 }
 
@@ -79,5 +93,15 @@ impl From<(String, i32)> for Document {
     #[inline]
     fn from((content, version): (String, i32)) -> Self {
         Self::new(content, version)
+    }
+}
+
+impl std::fmt::Debug for IndexedModule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IndexedModule")
+            .field("symbols", &self.symbols.len())
+            .field("scopes", &self.scopes.len())
+            .field("references", &self.references.len())
+            .finish()
     }
 }

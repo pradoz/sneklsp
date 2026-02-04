@@ -9,6 +9,7 @@ license.workspace = true
 sneklsp_text.workspace = true
 sneklsp_parser.workspace = true
 sneklsp_ast.workspace = true
+sneklsp_index.workspace = true
 
 lsp-server.workspace = true
 lsp-types.workspace = true

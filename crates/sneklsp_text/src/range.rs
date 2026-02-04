@@ -46,6 +46,11 @@ impl TextRange {
     pub const fn contains(self, offset: TextSize) -> bool {
         self.start.to_u32() <= offset.to_u32() && offset.to_u32() < self.end.to_u32()
     }
+
+    #[inline]
+    pub const fn contains_inclusive(self, offset: TextSize) -> bool {
+        self.start.to_u32() <= offset.to_u32() && offset.to_u32() <= self.end.to_u32()
+    }
 }
 
 impl From<TextRange> for Range<usize> {
