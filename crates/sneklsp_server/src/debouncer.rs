@@ -38,7 +38,8 @@ impl Debouncer {
                 scheduled_at: Instant::now(),
                 version,
             },
-        );()
+        );
+        ()
     }
 
     pub fn cancel(&mut self, uri: &Uri) {

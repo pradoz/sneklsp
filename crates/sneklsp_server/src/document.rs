@@ -1,5 +1,5 @@
-use crate::background::IndexedModule;
 use lsp_types::TextDocumentContentChangeEvent;
+use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::Token;
 use sneklsp_text::{LineIndex, TextRange, TextSize};
 
@@ -12,10 +12,10 @@ pub struct EditRecord {
 
 #[derive(Debug)]
 pub struct Document {
-    pub content: String,
+    content: String,
     pub line_index: LineIndex,
     pub version: i32,
-    pub index: Option<IndexedModule>,
+    pub index: Option<OwnedIndex>,
     pub pending_edits: Vec<EditRecord>,
     pub tokens: Vec<Token>,
 }
@@ -34,12 +34,28 @@ impl Document {
         }
     }
 
+    pub fn take_content_for_parse(&mut self) -> String {
+        if let Some(index) = self.index.take() {
+            index.into_source()
+        } else {
+            self.content.clone()
+        }
+    }
+
     pub fn apply_changes(&mut self, changes: Vec<TextDocumentContentChangeEvent>, version: i32) {
+        if self.content.is_empty() {
+            if let Some(ref index) = self.index {
+                self.content = index.source().to_string();
+            }
+        }
+
         for change in changes {
             self.apply_change(change);
         }
         self.version = version;
         self.line_index = LineIndex::new(&self.content);
+
+        self.index = None; // invalidate index. content changed
     }
 
     fn apply_change(&mut self, change: TextDocumentContentChangeEvent) {
@@ -109,13 +125,9 @@ impl Document {
     }
 
     #[inline]
-    pub fn set_content(&mut self, content: String) {
-        self.content = content;
-        self.line_index = LineIndex::new(&self.content);
-    }
-
-    #[inline]
-    pub fn set_index(&mut self, index: IndexedModule) {
+    pub fn set_index(&mut self, index: OwnedIndex, line_index: LineIndex) {
+        self.content = String::new();
+        self.line_index = line_index;
         self.index = Some(index);
     }
 }
@@ -124,15 +136,5 @@ impl From<(String, i32)> for Document {
     #[inline]
     fn from((content, version): (String, i32)) -> Self {
         Self::new(content, version)
-    }
-}
-
-impl std::fmt::Debug for IndexedModule {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IndexedModule")
-            .field("symbols", &self.symbols.len())
-            .field("scopes", &self.scopes.len())
-            .field("references", &self.references.len())
-            .finish()
     }
 }

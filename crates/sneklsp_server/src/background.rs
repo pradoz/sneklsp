@@ -6,7 +6,7 @@ use lsp_types::Uri;
 
 use crate::document::EditRecord;
 use sneklsp_ast::AstArena;
-use sneklsp_index::ModuleIndex;
+use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::{TextEdit as LexerEdit, Token, relex};
 use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
@@ -29,8 +29,7 @@ pub struct ParseResult {
     pub errors: Vec<ParseError>,
     pub line_index: LineIndex,
     pub request_id: u64,
-    pub content: String,
-    pub index: Option<IndexedModule>,
+    pub index: Option<OwnedIndex>,
     pub tokens: Vec<Token>,
 }
 
@@ -43,83 +42,6 @@ impl std::fmt::Debug for ParseResult {
             .field("has_index", &self.index.is_some())
             .field("token_count", &self.tokens.len())
             .finish()
-    }
-}
-
-pub struct IndexedModule {
-    pub symbols: Vec<IndexedSymbol>,
-    pub scopes: Vec<IndexedScope>,
-    pub references: Vec<IndexedReference>,
-}
-
-#[derive(Debug)]
-pub struct IndexedSymbol {
-    pub id: u32,
-    pub name: String,
-    pub kind: sneklsp_index::SymbolKind,
-    pub range: sneklsp_text::TextRange,
-    pub selection_range: sneklsp_text::TextRange,
-    pub scope: u32,
-    pub visibility: sneklsp_index::Visibility,
-}
-
-#[derive(Debug)]
-pub struct IndexedScope {
-    pub id: u32,
-    pub kind: sneklsp_index::ScopeKind,
-    pub parent: Option<u32>,
-    pub range: sneklsp_text::TextRange,
-    pub symbols: Vec<u32>,
-    pub children: Vec<u32>,
-}
-
-#[derive(Debug)]
-pub struct IndexedReference {
-    pub id: u32,
-    pub name: String,
-    pub range: sneklsp_text::TextRange,
-    pub resolved: Option<u32>,
-}
-
-trait IntoOwned<T> {
-    fn into_owned(&self) -> T;
-}
-
-impl IntoOwned<IndexedSymbol> for sneklsp_index::Symbol<'_> {
-    fn into_owned(&self) -> IndexedSymbol {
-        IndexedSymbol {
-            id: self.id.as_u32(),
-            name: self.name.to_string(),
-            kind: self.kind,
-            range: self.range,
-            selection_range: self.selection_range,
-            scope: self.scope.as_u32(),
-            visibility: self.visibility,
-        }
-    }
-}
-
-impl IntoOwned<IndexedScope> for sneklsp_index::Scope {
-    fn into_owned(&self) -> IndexedScope {
-        IndexedScope {
-            id: self.id.as_u32(),
-            kind: self.kind,
-            parent: self.parent.map(|p| p.as_u32()),
-            range: self.range,
-            symbols: self.symbols.iter().map(|id| id.as_u32()).collect(),
-            children: self.children.iter().map(|id| id.as_u32()).collect(),
-        }
-    }
-}
-
-impl IntoOwned<IndexedReference> for sneklsp_index::Reference<'_> {
-    fn into_owned(&self) -> IndexedReference {
-        IndexedReference {
-            id: self.id.as_u32(),
-            name: self.name.to_string(),
-            range: self.range,
-            resolved: self.resolved.map(|id| id.as_u32()),
-        }
     }
 }
 
@@ -225,7 +147,7 @@ impl BackgroundParser {
             let (errors, index) = match sneklsp_parser::parse(&request.content, &arena) {
                 Ok(module) => {
                     let idx = sneklsp_index::index_module(&request.content, &module);
-                    let owned_index = Self::to_owned_index(&idx);
+                    let owned_index = OwnedIndex::new(request.content.clone(), &idx);
                     (Vec::new(), Some(owned_index))
                 }
                 Err(_) => {
@@ -249,7 +171,6 @@ impl BackgroundParser {
                 errors,
                 line_index,
                 request_id: request.request_id,
-                content: request.content,
                 index,
                 tokens,
             };
@@ -272,10 +193,7 @@ impl BackgroundParser {
                 let lexer_edit = LexerEdit::new(edit.range, edit.new_len);
                 let result = relex(old_toks, old_src, content, lexer_edit);
 
-                tracing::debug!(
-                    fully_relexed = result.fully_relexed,
-                    "incremental lex"
-                );
+                tracing::debug!(fully_relexed = result.fully_relexed, "incremental lex");
 
                 result.tokens
             }
@@ -283,15 +201,6 @@ impl BackgroundParser {
                 tracing::debug!("full tokenize");
                 sneklsp_lexer::tokenize(content)
             }
-
-        }
-    }
-
-    fn to_owned_index(index: &ModuleIndex<'_>) -> IndexedModule {
-        IndexedModule {
-            symbols: index.symbols().iter().map(|s| s.into_owned()).collect(),
-            scopes: index.scopes().iter().map(|s| s.into_owned()).collect(),
-            references: index.references().iter().map(|r| r.into_owned()).collect(),
         }
     }
 }

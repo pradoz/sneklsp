@@ -5,8 +5,8 @@ use lsp_types::{
 };
 use std::collections::HashMap;
 
-use crate::background::{IndexedModule, IndexedReference, IndexedSymbol}; // CHANGED: added IndexedReference
 use crate::server::DocumentState;
+use sneklsp_index::{OwnedIndex, SymbolData};
 use sneklsp_text::{LineIndex, TextRange, TextSize};
 
 #[inline]
@@ -28,7 +28,6 @@ pub fn to_lsp_range(range: TextRange, line_index: &LineIndex) -> Range {
 
 #[inline]
 pub fn from_lsp_position(pos: Position, line_index: &LineIndex) -> Option<TextSize> {
-    // CHANGED: new helper
     line_index.offset(sneklsp_text::Position {
         line: pos.line,
         column: pos.character,
@@ -51,51 +50,36 @@ pub fn to_lsp_symbol_kind(kind: sneklsp_index::SymbolKind) -> SymbolKind {
 }
 
 pub struct DocumentQuery<'a> {
-    pub index: &'a IndexedModule,
+    pub index: &'a OwnedIndex,
     pub line_index: &'a LineIndex,
     pub uri: &'a Uri,
 }
 
 impl<'a> DocumentQuery<'a> {
-    pub fn find_symbol_at(&self, offset: TextSize) -> Option<&'a IndexedSymbol> {
-        for symbol in &self.index.symbols {
-            if symbol.selection_range.contains(offset) {
-                return Some(symbol);
-            }
+    pub fn find_symbol_at(&self, offset: TextSize) -> Option<&'a SymbolData> {
+        // check definitions
+        if let Some(symbol) = self.index.symbol_at(offset) {
+            return Some(symbol);
         }
 
         // check references
-        for reference in &self.index.references {
-            if reference.range.contains(offset) {
-                if let Some(sym_id) = reference.resolved {
-                    return self.symbol_by_id(sym_id);
-                }
+        if let Some(reference) = self.index.reference_at(offset) {
+            if let Some(sym_id) = reference.resolved {
+                return self.index.symbol(sym_id);
             }
         }
 
         None
     }
 
-    #[inline]
-    pub fn symbol_by_id(&self, id: u32) -> Option<&'a IndexedSymbol> {
-        self.index.symbols.iter().find(|s| s.id == id)
-    }
-
-    pub fn references_to(&self, symbol_id: u32) -> impl Iterator<Item = &'a IndexedReference> {
-        self.index
-            .references
-            .iter()
-            .filter(move |r| r.resolved == Some(symbol_id))
-    }
-
     pub fn all_occurrence_ranges(&self, symbol_id: u32) -> Vec<Range> {
         let mut ranges = Vec::new();
 
-        if let Some(symbol) = self.symbol_by_id(symbol_id) {
+        if let Some(symbol) = self.index.symbol(symbol_id) {
             ranges.push(to_lsp_range(symbol.selection_range, self.line_index));
         }
 
-        for reference in self.references_to(symbol_id) {
+        for reference in self.index.references_to(symbol_id) {
             ranges.push(to_lsp_range(reference.range, self.line_index));
         }
 
@@ -137,8 +121,8 @@ pub fn get_document_query<'a>(
 }
 
 fn to_document_symbol(
-    symbol: &IndexedSymbol,
-    index: &IndexedModule,
+    symbol: &SymbolData,
+    index: &OwnedIndex,
     line_index: &LineIndex,
 ) -> Option<DocumentSymbol> {
     if matches!(symbol.visibility, sneklsp_index::Visibility::DunderPrivate) {
@@ -146,10 +130,11 @@ fn to_document_symbol(
     }
 
     let children = find_symbol_children(symbol, index, line_index);
+    let name = index.symbol_name(symbol).to_string();
 
     #[allow(deprecated)]
     Some(DocumentSymbol {
-        name: symbol.name.clone(),
+        name,
         detail: None,
         kind: to_lsp_symbol_kind(symbol.kind),
         tags: None,
@@ -165,8 +150,8 @@ fn to_document_symbol(
 }
 
 fn find_symbol_children(
-    parent: &IndexedSymbol,
-    index: &IndexedModule,
+    parent: &SymbolData,
+    index: &OwnedIndex,
     line_index: &LineIndex,
 ) -> Vec<DocumentSymbol> {
     let mut children = Vec::new();
@@ -176,10 +161,10 @@ fn find_symbol_children(
         | sneklsp_index::SymbolKind::Class
         | sneklsp_index::SymbolKind::Method => {
             // find child scope that matches this symbol range
-            for scope in &index.scopes {
+            for scope in index.scopes() {
                 if scope.parent == Some(parent.scope) && scope.range == parent.range {
                     for &sym_id in &scope.symbols {
-                        if let Some(sym) = index.symbols.iter().find(|s| s.id == sym_id) {
+                        if let Some(sym) = index.symbol(sym_id) {
                             if let Some(doc_sym) = to_document_symbol(sym, index, line_index) {
                                 children.push(doc_sym);
                             }
@@ -204,9 +189,9 @@ pub fn handle_document_symbol(
 
     let mut symbols = Vec::new();
 
-    let root_scope = index.scopes.first()?;
+    let root_scope = index.root_scope()?;
     for &sym_id in &root_scope.symbols {
-        if let Some(symbol) = index.symbols.iter().find(|s| s.id == sym_id) {
+        if let Some(symbol) = index.symbol(sym_id) {
             if let Some(doc_sym) = to_document_symbol(symbol, index, &state.document.line_index) {
                 symbols.push(doc_sym);
             }
@@ -218,7 +203,7 @@ pub fn handle_document_symbol(
 
 pub fn handle_goto_definition(
     params: GotoDefinitionParams,
-    documents: &HashMap<Uri, crate::server::DocumentState>,
+    documents: &HashMap<Uri, DocumentState>,
 ) -> Option<GotoDefinitionResponse> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -235,7 +220,7 @@ pub fn handle_goto_definition(
 
 pub fn handle_references(
     params: ReferenceParams,
-    documents: &HashMap<Uri, crate::server::DocumentState>,
+    documents: &HashMap<Uri, DocumentState>,
 ) -> Option<Vec<Location>> {
     let uri = params.text_document_position.text_document.uri;
     let pos = params.text_document_position.position;
@@ -251,7 +236,7 @@ pub fn handle_references(
         locations.push(query.location(symbol.selection_range));
     }
 
-    for reference in query.references_to(symbol.id) {
+    for reference in query.index.references_to(symbol.id) {
         locations.push(query.location(reference.range));
     }
 
@@ -264,7 +249,7 @@ pub fn handle_references(
 
 pub fn handle_rename(
     params: RenameParams,
-    documents: &HashMap<Uri, crate::server::DocumentState>,
+    documents: &HashMap<Uri, DocumentState>,
 ) -> Option<WorkspaceEdit> {
     let uri = params.text_document_position.text_document.uri;
     let pos = params.text_document_position.position;
@@ -300,7 +285,7 @@ pub fn handle_rename(
 
 pub fn handle_document_highlight(
     params: lsp_types::DocumentHighlightParams,
-    documents: &HashMap<Uri, crate::server::DocumentState>,
+    documents: &HashMap<Uri, DocumentState>,
 ) -> Option<Vec<lsp_types::DocumentHighlight>> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -319,7 +304,7 @@ pub fn handle_document_highlight(
     ));
 
     // references should READ
-    for reference in query.references_to(symbol.id) {
+    for reference in query.index.references_to(symbol.id) {
         highlights.push(query.highlight(reference.range, lsp_types::DocumentHighlightKind::READ));
     }
 

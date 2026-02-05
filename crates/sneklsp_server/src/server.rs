@@ -148,20 +148,27 @@ impl Server {
                 if state.document.version == version {
                     tracing::debug!(?uri, version, "debounce complete. submitting parse");
 
-                    let content = state.document.content.clone();
+                    let content = state.document.take_content_for_parse();
                     let edits = state.document.take_edits();
                     let has_prior_index = state.document.index.is_some();
 
-                    let (old_tokens, old_content) = if edits.len() == 1 && state.document.has_tokens() {
-                        let old_content = Self::reconstruct_old_content(&content, &edits);
-                        (Some(state.document.tokens.clone()), Some(old_content))
-                    } else {
-                        (None, None)
-                    };
+                    let (old_tokens, old_content) =
+                        if edits.len() == 1 && state.document.has_tokens() {
+                            let old_content = Self::reconstruct_old_content(&content, &edits);
+                            (Some(state.document.tokens.clone()), Some(old_content))
+                        } else {
+                            (None, None)
+                        };
 
-                    let request_id =
-                        self.parser
-                            .parse(uri.clone(), content, version, edits, has_prior_index, old_tokens, old_content);
+                    let request_id = self.parser.parse(
+                        uri.clone(),
+                        content,
+                        version,
+                        edits,
+                        has_prior_index,
+                        old_tokens,
+                        old_content,
+                    );
                     state.pending_request_id = request_id;
                 }
             }
@@ -181,9 +188,8 @@ impl Server {
             return current.to_string();
         }
 
-        let mut old = String::with_capacity(
-            current.len() - edit.new_len.to_usize() + edit.old_content.len()
-        );
+        let mut old =
+            String::with_capacity(current.len() - edit.new_len.to_usize() + edit.old_content.len());
         old.push_str(&current[..start]);
         old.push_str(&edit.old_content);
         old.push_str(&current[new_end..]);
@@ -197,24 +203,11 @@ impl Server {
             errors,
             line_index,
             request_id,
-            content,
             index,
             tokens,
         } = result;
 
         if let Some(state) = self.documents.get_mut(&uri) {
-            // restore content if versions match
-            if state.document.version == version {
-                state.document.set_content(content);
-                state.document.line_index = line_index.clone();
-                state.document.set_tokens(tokens);
-
-                if let Some(idx) = index {
-                    state.document.set_index(idx);
-                    tracing::debug!(?uri, "index updated");
-                }
-            }
-
             // document might have changed since parse was requested
             if state.document.version != version {
                 tracing::debug!(
@@ -238,6 +231,14 @@ impl Server {
                     return;
                 }
             }
+
+            state.document.set_tokens(tokens);
+            if let Some(idx) = index {
+                state.document.set_index(idx, line_index.clone());
+                tracing::debug!(?uri, "index updated");
+            }
+
+            state.pending_request_id = None;
         } else {
             tracing::debug!(?uri, "ignoring parse result for closed document");
             return;
@@ -252,11 +253,6 @@ impl Server {
 
         let diagnostics = to_diagnostics(&errors, &line_index);
         self.send_diagnostics(&uri, diagnostics);
-
-        // clear pending request
-        if let Some(state) = self.documents.get_mut(&uri) {
-            state.pending_request_id = None;
-        }
     }
 
     fn handle_request(&mut self, req: Request) -> Result<()> {
@@ -334,9 +330,9 @@ impl Server {
 
         // submit for background parsing. content is restored when result arrives
         let document = Document::new(String::new(), version);
-        let request_id = self
-            .parser
-            .parse(uri.clone(), content, version, Vec::new(), false, None, None);
+        let request_id =
+            self.parser
+                .parse(uri.clone(), content, version, Vec::new(), false, None, None);
         self.documents.insert(
             uri,
             DocumentState {

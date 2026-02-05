@@ -14,14 +14,11 @@ pub fn find_affected_scopes(index: &ModuleIndex<'_>, edit_range: TextRange) -> V
 }
 
 #[inline]
-fn ranges_overlap(a: TextRange, b: TextRange) -> bool{
+fn ranges_overlap(a: TextRange, b: TextRange) -> bool {
     a.start() < b.end() && b.start() < a.end()
 }
 
-pub fn can_update_incrementally(
-    index: &ModuleIndex<'_>,
-    edit_range: TextRange,
-) -> bool {
+pub fn can_update_incrementally(index: &ModuleIndex<'_>, edit_range: TextRange) -> bool {
     let affected_scopes = find_affected_scopes(index, edit_range);
 
     if affected_scopes.len() == 1 {
@@ -43,7 +40,6 @@ pub fn can_update_incrementally(
 mod tests {
     use super::*;
     use sneklsp_text::TextSize;
-
 
     fn range(start: u32, end: u32) -> TextRange {
         TextRange::new(TextSize::new(start), TextSize::new(end))
