@@ -4,8 +4,10 @@ use std::thread::{self, JoinHandle};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use lsp_types::Uri;
 
+use crate::document::EditRecord;
 use sneklsp_ast::AstArena;
 use sneklsp_index::ModuleIndex;
+use sneklsp_lexer::{TextEdit as LexerEdit, Token, relex};
 use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
 
@@ -15,6 +17,10 @@ pub struct ParseRequest {
     pub content: String,
     pub version: i32,
     pub request_id: u64,
+    pub edits: Vec<EditRecord>,
+    pub has_prior_index: bool,
+    pub old_tokens: Option<Vec<Token>>,
+    pub old_content: Option<String>,
 }
 
 pub struct ParseResult {
@@ -25,6 +31,7 @@ pub struct ParseResult {
     pub request_id: u64,
     pub content: String,
     pub index: Option<IndexedModule>,
+    pub tokens: Vec<Token>,
 }
 
 impl std::fmt::Debug for ParseResult {
@@ -34,6 +41,7 @@ impl std::fmt::Debug for ParseResult {
             .field("version", &self.version)
             .field("errors", &self.errors)
             .field("has_index", &self.index.is_some())
+            .field("token_count", &self.tokens.len())
             .finish()
     }
 }
@@ -143,7 +151,16 @@ impl BackgroundParser {
     }
 
     #[inline]
-    pub fn parse(&self, uri: Uri, content: String, version: i32) -> Option<u64> {
+    pub fn parse(
+        &self,
+        uri: Uri,
+        content: String,
+        version: i32,
+        edits: Vec<EditRecord>,
+        has_prior_index: bool,
+        old_tokens: Option<Vec<Token>>,
+        old_content: Option<String>,
+    ) -> Option<u64> {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
 
         let request = ParseRequest {
@@ -151,6 +168,10 @@ impl BackgroundParser {
             content,
             version,
             request_id,
+            edits,
+            has_prior_index,
+            old_tokens,
+            old_content,
         };
 
         match self.request_tx.try_send(request) {
@@ -184,7 +205,17 @@ impl BackgroundParser {
             tracing::debug!(
                 request_id = request.request_id,
                 ?request.uri,
+                edit_count = request.edits.len(),
+                has_prior_index = request.has_prior_index,
+                has_old_tokens = request.old_tokens.is_some(),
                 "parsing document"
+            );
+
+            let tokens = Self::do_lex(
+                &request.content,
+                &request.edits,
+                request.old_tokens.as_deref(),
+                request.old_content.as_deref(),
             );
 
             let line_index = LineIndex::new(&request.content);
@@ -208,6 +239,7 @@ impl BackgroundParser {
                 request_id = request.request_id,
                 ?elapsed,
                 error_count = errors.len(),
+                token_count = tokens.len(),
                 "parsing complete"
             );
 
@@ -219,6 +251,7 @@ impl BackgroundParser {
                 request_id: request.request_id,
                 content: request.content,
                 index,
+                tokens,
             };
 
             if result_tx.try_send(result).is_err() {
@@ -226,6 +259,32 @@ impl BackgroundParser {
             }
         }
         tracing::info!("parser thread shutting down");
+    }
+
+    fn do_lex(
+        content: &str,
+        edits: &[EditRecord],
+        old_tokens: Option<&[Token]>,
+        old_content: Option<&str>,
+    ) -> Vec<Token> {
+        match (old_tokens, old_content, edits) {
+            (Some(old_toks), Some(old_src), [edit]) => {
+                let lexer_edit = LexerEdit::new(edit.range, edit.new_len);
+                let result = relex(old_toks, old_src, content, lexer_edit);
+
+                tracing::debug!(
+                    fully_relexed = result.fully_relexed,
+                    "incremental lex"
+                );
+
+                result.tokens
+            }
+            _ => {
+                tracing::debug!("full tokenize");
+                sneklsp_lexer::tokenize(content)
+            }
+
+        }
     }
 
     fn to_owned_index(index: &ModuleIndex<'_>) -> IndexedModule {

@@ -1,6 +1,14 @@
 use crate::background::IndexedModule;
 use lsp_types::TextDocumentContentChangeEvent;
-use sneklsp_text::LineIndex;
+use sneklsp_lexer::Token;
+use sneklsp_text::{LineIndex, TextRange, TextSize};
+
+#[derive(Debug, Clone)]
+pub struct EditRecord {
+    pub range: TextRange,
+    pub new_len: TextSize,
+    pub old_content: String,
+}
 
 #[derive(Debug)]
 pub struct Document {
@@ -8,6 +16,8 @@ pub struct Document {
     pub line_index: LineIndex,
     pub version: i32,
     pub index: Option<IndexedModule>,
+    pub pending_edits: Vec<EditRecord>,
+    pub tokens: Vec<Token>,
 }
 
 impl Document {
@@ -19,6 +29,8 @@ impl Document {
             line_index,
             version,
             index: None,
+            pending_edits: Vec::new(),
+            tokens: Vec::new(),
         }
     }
 
@@ -28,7 +40,6 @@ impl Document {
         }
         self.version = version;
         self.line_index = LineIndex::new(&self.content);
-        self.index = None;
     }
 
     fn apply_change(&mut self, change: TextDocumentContentChangeEvent) {
@@ -45,26 +56,56 @@ impl Document {
                 });
 
                 if let (Some(start), Some(end)) = (start_offset, end_offset) {
-                    let start = start.to_usize();
-                    let end = end.to_usize();
+                    let start_usize = start.to_usize();
+                    let end_usize = end.to_usize();
 
                     // bounds check
-                    if start <= end && end <= self.content.len() {
-                        self.content.replace_range(start..end, &change.text);
+                    if start_usize <= end_usize && end_usize <= self.content.len() {
+                        let old_content = self.content[start_usize..end_usize].to_string();
+
+                        self.pending_edits.push(EditRecord {
+                            range: TextRange::new(start, end),
+                            new_len: TextSize::new(change.text.len() as u32),
+                            old_content,
+                        });
+
+                        self.content
+                            .replace_range(start_usize..end_usize, &change.text);
                     } else {
                         tracing::warn!("invalid change range. using full replacement");
-                        self.content = change.text;
+                        self.full_replace(change.text);
                     }
                 } else {
                     tracing::warn!("couldn't compute offsets. using full replacement");
-                    self.content = change.text;
+                    self.full_replace(change.text);
                 }
             }
             // full content change
             None => {
-                self.content = change.text;
+                self.full_replace(change.text);
             }
         }
+    }
+
+    fn full_replace(&mut self, content: String) {
+        self.content = content;
+        self.pending_edits.clear();
+        self.tokens.clear();
+        self.index = None;
+    }
+
+    #[inline]
+    pub fn take_edits(&mut self) -> Vec<EditRecord> {
+        std::mem::take(&mut self.pending_edits)
+    }
+
+    #[inline]
+    pub fn has_tokens(&self) -> bool {
+        !self.tokens.is_empty()
+    }
+
+    pub fn set_tokens(&mut self, tokens: Vec<Token>) {
+        self.tokens = tokens;
     }
 
     #[inline]
@@ -76,11 +117,6 @@ impl Document {
     #[inline]
     pub fn set_index(&mut self, index: IndexedModule) {
         self.index = Some(index);
-    }
-
-    #[inline]
-    pub fn take_content(&mut self) -> String {
-        std::mem::take(&mut self.content)
     }
 }
 

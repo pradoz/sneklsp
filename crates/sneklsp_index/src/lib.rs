@@ -1,19 +1,20 @@
 mod definition;
+mod incremental;
 mod indexer;
 mod interval;
-mod query;
 mod reference;
 mod scope;
 mod symbol;
 
 pub use definition::Definition;
+pub use incremental::{can_update_incrementally, find_affected_scopes};
 pub use indexer::{Indexer, index_module};
 pub use interval::IntervalTree;
 pub use reference::{Reference, ReferenceId};
 pub use scope::{Scope, ScopeId, ScopeKind};
 pub use symbol::{Symbol, SymbolId, SymbolKind, Visibility};
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use sneklsp_text::{TextRange, TextSize};
 
 #[derive(Debug)]
@@ -204,42 +205,6 @@ impl<'src> ModuleIndex<'src> {
         }
 
         ranges
-    }
-
-    pub fn visible_symbols_at(&self, pos: TextSize) -> Vec<&Symbol<'src>> {
-        let mut visible = Vec::new();
-        let mut seen = FxHashSet::default();
-
-        let Some(scope) = self.scope_at(pos) else {
-            return visible;
-        };
-
-        let mut current = Some(scope.id);
-
-        while let Some(scope_id) = current {
-            let scope = self.scope(scope_id);
-
-            for &symbol_id in &scope.symbols {
-                let symbol = self.symbol(symbol_id);
-                // add if not already shadowed by an inner scope
-                if seen.insert(symbol.name) {
-                    visible.push(symbol);
-                }
-            }
-
-            current = scope.parent;
-        }
-
-        visible
-    }
-
-    pub fn symbol_containing(&self, pos: TextSize) -> Option<&Symbol<'src>> {
-        for symbol in &self.symbols {
-            if symbol.selection_range.contains(pos) {
-                return Some(symbol);
-            }
-        }
-        None
     }
 }
 

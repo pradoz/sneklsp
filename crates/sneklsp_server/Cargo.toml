@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 sneklsp_text.workspace = true
 sneklsp_parser.workspace = true
+sneklsp_lexer.workspace = true
 sneklsp_ast.workspace = true
 sneklsp_index.workspace = true
 

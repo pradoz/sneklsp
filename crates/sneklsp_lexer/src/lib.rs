@@ -1,6 +1,10 @@
+mod edit;
+mod incremental;
 mod lexer;
 mod token;
 
+pub use edit::TextEdit;
+pub use incremental::{IncrementalLexResult, relex};
 pub use lexer::Lexer;
 pub use token::{Token, TokenKind};
 
