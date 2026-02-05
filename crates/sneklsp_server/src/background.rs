@@ -73,6 +73,48 @@ pub struct IndexedReference {
     pub resolved: Option<u32>,
 }
 
+trait IntoOwned<T> {
+    fn into_owned(&self) -> T;
+}
+
+impl IntoOwned<IndexedSymbol> for sneklsp_index::Symbol<'_> {
+    fn into_owned(&self) -> IndexedSymbol {
+        IndexedSymbol {
+            id: self.id.as_u32(),
+            name: self.name.to_string(),
+            kind: self.kind,
+            range: self.range,
+            selection_range: self.selection_range,
+            scope: self.scope.as_u32(),
+            visibility: self.visibility,
+        }
+    }
+}
+
+impl IntoOwned<IndexedScope> for sneklsp_index::Scope {
+    fn into_owned(&self) -> IndexedScope {
+        IndexedScope {
+            id: self.id.as_u32(),
+            kind: self.kind,
+            parent: self.parent.map(|p| p.as_u32()),
+            range: self.range,
+            symbols: self.symbols.iter().map(|id| id.as_u32()).collect(),
+            children: self.children.iter().map(|id| id.as_u32()).collect(),
+        }
+    }
+}
+
+impl IntoOwned<IndexedReference> for sneklsp_index::Reference<'_> {
+    fn into_owned(&self) -> IndexedReference {
+        IndexedReference {
+            id: self.id.as_u32(),
+            name: self.name.to_string(),
+            range: self.range,
+            resolved: self.resolved.map(|id| id.as_u32()),
+        }
+    }
+}
+
 pub struct BackgroundParser {
     request_tx: Sender<ParseRequest>,
     result_rx: Receiver<ParseResult>,
@@ -147,7 +189,8 @@ impl BackgroundParser {
 
             let line_index = LineIndex::new(&request.content);
 
-            let arena = AstArena::new();
+            let arena_size = (request.content.len() * 50).max(4096);
+            let arena = AstArena::with_capacity(arena_size);
             let (errors, index) = match sneklsp_parser::parse(&request.content, &arena) {
                 Ok(module) => {
                     let idx = sneklsp_index::index_module(&request.content, &module);
@@ -181,54 +224,15 @@ impl BackgroundParser {
             if result_tx.try_send(result).is_err() {
                 tracing::warn!("result channel full. dropping parse result");
             }
-
-            tracing::info!("parser thread shutting down");
         }
+        tracing::info!("parser thread shutting down");
     }
 
     fn to_owned_index(index: &ModuleIndex<'_>) -> IndexedModule {
-        let symbols = index
-            .symbols()
-            .iter()
-            .map(|s| IndexedSymbol {
-                id: s.id.as_u32(),
-                name: s.name.to_string(),
-                kind: s.kind,
-                range: s.range,
-                selection_range: s.selection_range,
-                scope: s.scope.as_u32(),
-                visibility: s.visibility,
-            })
-            .collect();
-
-        let scopes = index
-            .scopes()
-            .iter()
-            .map(|s| IndexedScope {
-                id: s.id.as_u32(),
-                kind: s.kind,
-                parent: s.parent.map(|p| p.as_u32()),
-                range: s.range,
-                symbols: s.symbols.iter().map(|id| id.as_u32()).collect(),
-                children: s.children.iter().map(|id| id.as_u32()).collect(),
-            })
-            .collect();
-
-        let references = index
-            .references()
-            .iter()
-            .map(|r| IndexedReference {
-                id: r.id.as_u32(),
-                name: r.name.to_string(),
-                range: r.range,
-                resolved: r.resolved.map(|id| id.as_u32()),
-            })
-            .collect();
-
         IndexedModule {
-            symbols,
-            scopes,
-            references,
+            symbols: index.symbols().iter().map(|s| s.into_owned()).collect(),
+            scopes: index.scopes().iter().map(|s| s.into_owned()).collect(),
+            references: index.references().iter().map(|r| r.into_owned()).collect(),
         }
     }
 }

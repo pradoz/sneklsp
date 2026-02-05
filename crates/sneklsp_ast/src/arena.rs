@@ -35,27 +35,10 @@ impl AstArena {
     pub fn alloc_str(&self, s: &str) -> &str {
         self.bump.alloc_str(s)
     }
-
-    #[inline]
-    pub fn allocated_bytes(&self) -> usize {
-        self.bump.allocated_bytes()
-    }
-
-    pub fn reset(&mut self) {
-        self.bump.reset()
-    }
 }
 
 impl Default for AstArena {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl std::fmt::Display for AstArena {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ASTArena")
-            .field("allocated_bytes", &self.bump.allocated_bytes())
-            .finish()
     }
 }

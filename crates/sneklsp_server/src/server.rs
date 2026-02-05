@@ -8,7 +8,8 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, References, Rename, Request as _,
+    DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, References, Rename,
+    Request as _,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,

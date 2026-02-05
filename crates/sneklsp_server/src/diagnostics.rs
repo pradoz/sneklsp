@@ -12,6 +12,30 @@ pub fn to_diagnostics(errors: &[ParseError], line_index: &LineIndex) -> Vec<Diag
 }
 
 #[inline]
+fn single_char_range(pos: sneklsp_text::Position) -> Range {
+    let position = Position {
+        line: pos.line,
+        character: pos.column,
+    };
+    Range {
+        start: position,
+        end: Position {
+            line: pos.line,
+            character: pos.column + 1,
+        },
+    }
+}
+
+#[inline]
+fn zero_width_range(line: u32, character: u32) -> Range {
+    let position = Position { line, character };
+    Range {
+        start: position,
+        end: position,
+    }
+}
+
+#[inline]
 fn to_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic {
     let (range, message) = match error {
         ParseError::UnexpectedToken {
@@ -20,49 +44,23 @@ fn to_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic {
             found,
         } => {
             let pos = line_index.position(*offset);
-            let position = Position {
-                line: pos.line,
-                character: pos.column,
-            };
-            let range = Range {
-                start: position,
-                end: Position {
-                    line: pos.line,
-                    character: pos.column + 1,
-                },
-            };
-
-            (range, format!("expected {expected}, found {found}"))
+            (
+                single_char_range(pos),
+                format!("expected {expected}, found {found}"),
+            )
         }
 
         ParseError::UnexpectedEof => {
-            let position = Position {
-                line: line_index.line_count().saturating_sub(1) as u32,
-                character: 0,
-            };
-            let range = Range {
-                start: position,
-                end: position,
-            };
-
-            (range, "unexpected end of file".to_string())
+            let line = line_index.line_count().saturating_sub(1) as u32;
+            (
+                zero_width_range(line, 0),
+                "unexpected end of file".to_string(),
+            )
         }
 
         ParseError::InvalidSyntax(offset) => {
             let pos = line_index.position(*offset);
-            let position = Position {
-                line: pos.line,
-                character: pos.column,
-            };
-            let range = Range {
-                start: position,
-                end: Position {
-                    line: pos.line,
-                    character: pos.column + 1,
-                },
-            };
-
-            (range, "invalid syntax".to_string())
+            (single_char_range(pos), "invalid syntax".to_string())
         }
     };
 

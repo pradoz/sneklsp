@@ -82,11 +82,6 @@ impl Document {
     pub fn take_content(&mut self) -> String {
         std::mem::take(&mut self.content)
     }
-
-    #[inline]
-    pub fn has_index(&self) -> bool {
-        self.index.is_some()
-    }
 }
 
 impl From<(String, i32)> for Document {

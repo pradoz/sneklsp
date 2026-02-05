@@ -148,48 +148,6 @@ impl TokenKind {
         };
         Some(kind)
     }
-
-    #[inline]
-    pub const fn is_keyword(self) -> bool {
-        matches!(
-            self,
-            Self::And
-                | Self::As
-                | Self::Assert
-                | Self::Async
-                | Self::Await
-                | Self::Break
-                | Self::Class
-                | Self::Continue
-                | Self::Def
-                | Self::Del
-                | Self::Elif
-                | Self::Else
-                | Self::Except
-                | Self::False
-                | Self::Finally
-                | Self::For
-                | Self::From
-                | Self::Global
-                | Self::If
-                | Self::Import
-                | Self::In
-                | Self::Is
-                | Self::Lambda
-                | Self::None
-                | Self::Nonlocal
-                | Self::Not
-                | Self::Or
-                | Self::Pass
-                | Self::Raise
-                | Self::Return
-                | Self::True
-                | Self::Try
-                | Self::While
-                | Self::With
-                | Self::Yield
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

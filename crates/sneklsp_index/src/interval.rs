@@ -80,38 +80,9 @@ impl<T: Copy> IntervalTree<T> {
         best.map(|i| i.value)
     }
 
-    pub fn find_exact(&self, range: TextRange) -> Option<T> {
-        // binary search for start position
-        let start = self
-            .intervals
-            .partition_point(|i| i.range.start() < range.start());
-
-        // linear scan from start
-        for interval in &self.intervals[start..] {
-            if interval.range.start() > range.start() {
-                break;
-            }
-            if interval.range == range {
-                return Some(interval.value);
-            }
-        }
-
-        None
-    }
-
     #[inline]
     pub fn len(&self) -> usize {
         self.intervals.len()
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.intervals.is_empty()
-    }
-
-    #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = (TextRange, T)> + '_ {
-        self.intervals.iter().map(|i| (i.range, i.value))
     }
 }
 

@@ -20,13 +20,21 @@ impl<'src> Indexer<'src> {
 
     pub fn index(mut self, module: &Module<'src>) -> ModuleIndex<'src> {
         self.index.add_module_scope(module.range);
-
-        for stmt in module.body {
-            self.visit_stmt(*stmt);
-        }
-
+        self.visit_stmts(module.body);
         self.index.finish();
         self.index
+    }
+
+    fn visit_stmts(&mut self, stmts: &[Statement<'src>]) {
+        for stmt in stmts {
+            self.visit_stmt(*stmt);
+        }
+    }
+
+    fn visit_exprs(&mut self, exprs: &[Expression<'src>]) {
+        for expr in exprs {
+            self.visit_expr(*expr);
+        }
     }
 
     fn visit_stmt(&mut self, stmt: Statement<'src>) {
@@ -57,27 +65,33 @@ impl<'src> Indexer<'src> {
         let _symbol_id =
             self.index
                 .add_symbol(func.name, kind, func.range, name_range, self.current_scope);
+
         let func_scope = self
             .index
             .add_scope(ScopeKind::Function, self.current_scope, func.range);
 
+        self.with_scope(func_scope, |this| {
+            for p in func.params {
+                this.visit_parameter(p);
+            }
+
+            if let Some(returns) = func.returns {
+                this.visit_expr(returns);
+            }
+
+            this.visit_stmts(func.body);
+        });
+    }
+
+    fn with_scope<F, R>(&mut self, scope: ScopeId, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
         let parent_scope = self.current_scope;
-        self.current_scope = func_scope;
-
-        for p in func.params {
-            self.visit_parameter(p);
-        }
-
-        // visit return annotation
-        if let Some(returns) = func.returns {
-            self.visit_expr(returns);
-        }
-
-        for stmt in func.body {
-            self.visit_stmt(*stmt);
-        }
-
-        self.current_scope = parent_scope; // exit function scope
+        self.current_scope = scope;
+        let result = f(self); // execute in dirrent scope
+        self.current_scope = parent_scope; // restore scope
+        result
     }
 
     fn visit_parameter(&mut self, param: &Parameter<'src>) {
@@ -109,21 +123,15 @@ impl<'src> Indexer<'src> {
             self.current_scope,
         );
 
-        for base in class.bases {
-            self.visit_expr(*base);
-        }
+        self.visit_exprs(class.bases);
 
         let inner_scope = self
             .index
             .add_scope(ScopeKind::Class, self.current_scope, class.range);
-        let parent_scope = self.current_scope;
-        self.current_scope = inner_scope;
 
-        for stmt in class.body {
-            self.visit_stmt(*stmt);
-        }
-
-        self.current_scope = parent_scope;
+        self.with_scope(inner_scope, |this| {
+            this.visit_stmts(class.body);
+        });
     }
 
     fn visit_return(&mut self, ret: &ReturnStmt<'src>) {
@@ -164,83 +172,55 @@ impl<'src> Indexer<'src> {
                     );
                 }
             }
-            Expression::List(list) => {
-                for e in list.elts {
-                    self.visit_assign_target(*e);
-                }
-            }
-            Expression::Tuple(tuple) => {
-                for e in tuple.elts {
-                    self.visit_assign_target(*e);
-                }
-            }
+            Expression::List(list) => self.visit_assign_targets(list.elts),
+            Expression::Tuple(tuple) => self.visit_assign_targets(tuple.elts),
             Expression::Attribute(_) | Expression::Subscript(_) => self.visit_expr(target),
             _ => self.visit_expr(target),
         }
     }
 
+    fn visit_assign_targets(&mut self, targets: &[Expression<'src>]) {
+        for e in targets {
+            self.visit_assign_target(*e);
+        }
+    }
+
     fn visit_if(&mut self, if_stmt: &IfStmt<'src>) {
         self.visit_expr(if_stmt.test);
-
-        for s in if_stmt.body {
-            self.visit_stmt(*s);
-        }
-        for s in if_stmt.orelse {
-            self.visit_stmt(*s);
-        }
+        self.visit_stmts(if_stmt.body);
+        self.visit_stmts(if_stmt.orelse);
     }
 
     fn visit_for(&mut self, for_stmt: &ForStmt<'src>) {
         self.visit_expr(for_stmt.iter);
         self.visit_assign_target(for_stmt.target);
-
-        for s in for_stmt.body {
-            self.visit_stmt(*s);
-        }
-        for s in for_stmt.orelse {
-            self.visit_stmt(*s);
-        }
+        self.visit_stmts(for_stmt.body);
+        self.visit_stmts(for_stmt.orelse);
     }
 
     fn visit_while(&mut self, while_stmt: &WhileStmt<'src>) {
         self.visit_expr(while_stmt.test);
-
-        for s in while_stmt.body {
-            self.visit_stmt(*s);
-        }
-        for s in while_stmt.orelse {
-            self.visit_stmt(*s);
-        }
+        self.visit_stmts(while_stmt.body);
+        self.visit_stmts(while_stmt.orelse);
     }
 
     fn visit_import(&mut self, import: &ImportStmt<'src>) {
         for alias in import.names {
-            let name = alias.asname.unwrap_or(alias.name);
-            let range = self.name_range(name, alias.range);
-
-            self.index.add_symbol(
-                name,
-                SymbolKind::Import,
-                alias.range,
-                range,
-                self.current_scope,
-            );
+            self.add_import_symbol(alias, SymbolKind::Import);
         }
     }
 
     fn visit_import_from(&mut self, import: &ImportFromStmt<'src>) {
         for alias in import.names {
-            let name = alias.asname.unwrap_or(alias.name);
-            let range = self.name_range(name, alias.range);
-
-            self.index.add_symbol(
-                name,
-                SymbolKind::ImportedSymbol,
-                alias.range,
-                range,
-                self.current_scope,
-            );
+            self.add_import_symbol(alias, SymbolKind::ImportedSymbol);
         }
+    }
+
+    fn add_import_symbol(&mut self, alias: &Alias<'src>, kind: SymbolKind) {
+        let name = alias.asname.unwrap_or(alias.name);
+        let range = self.name_range(name, alias.range);
+        self.index
+            .add_symbol(name, kind, alias.range, range, self.current_scope);
     }
 
     fn visit_expr_stmt(&mut self, expr_stmt: &ExprStmt<'src>) {
@@ -259,15 +239,11 @@ impl<'src> Indexer<'src> {
             }
             Expression::Compare(compare) => {
                 self.visit_expr(compare.left);
-                for comp in compare.comparators {
-                    self.visit_expr(*comp);
-                }
+                self.visit_exprs(compare.comparators);
             }
             Expression::Call(call) => {
                 self.visit_expr(call.func);
-                for arg in call.args {
-                    self.visit_expr(*arg);
-                }
+                self.visit_exprs(call.args);
             }
             Expression::Attribute(attr) => {
                 self.visit_expr(attr.value);
@@ -277,25 +253,15 @@ impl<'src> Indexer<'src> {
                 self.visit_expr(sub.value);
                 self.visit_expr(sub.slice);
             }
-            Expression::List(list) => {
-                for elt in list.elts {
-                    self.visit_expr(*elt);
-                }
-            }
-            Expression::Tuple(tuple) => {
-                for elt in tuple.elts {
-                    self.visit_expr(*elt);
-                }
-            }
+            Expression::List(list) => self.visit_exprs(list.elts),
+            Expression::Tuple(tuple) => self.visit_exprs(tuple.elts),
             Expression::Dict(dict) => {
                 for key in dict.keys {
                     if let Some(k) = key {
                         self.visit_expr(*k);
                     }
                 }
-                for value in dict.values {
-                    self.visit_expr(*value);
-                }
+                self.visit_exprs(dict.values);
             }
             Expression::Int(_)
             | Expression::Float(_)
@@ -311,6 +277,9 @@ impl<'src> Indexer<'src> {
     }
 
     fn is_in_class_scope(&self) -> bool {
+        if self.current_scope.is_root() {
+            return false;
+        }
         self.index.scope(self.current_scope).kind == ScopeKind::Class
     }
 

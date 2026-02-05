@@ -39,11 +39,6 @@ pub enum ScopeKind {
 
 impl ScopeKind {
     #[inline]
-    pub const fn is_local_namespace(self) -> bool {
-        matches!(self, Self::Function | Self::Comprehension | Self::Lambda)
-    }
-
-    #[inline]
     pub const fn skip_in_resolution(self) -> bool {
         matches!(self, Self::Class)
     }

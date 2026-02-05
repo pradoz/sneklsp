@@ -171,21 +171,6 @@ impl<'src> ModuleIndex<'src> {
             .filter(move |r| r.resolved == Some(symbol))
     }
 
-    pub fn symbols_by_name(&self, name: &str) -> impl Iterator<Item = &Symbol<'src>> {
-        self.name_to_symbols
-            .get(name)
-            .into_iter()
-            .flatten()
-            .map(|id| &self.symbols[id.as_usize()])
-    }
-
-    pub fn symbols_in_scope(&self, scope: ScopeId) -> impl Iterator<Item = &Symbol<'src>> {
-        self.scopes[scope.as_usize()]
-            .symbols
-            .iter()
-            .map(|id| &self.symbols[id.as_usize()])
-    }
-
     pub fn resolve_name(&self, name: &str, from_scope: ScopeId) -> Option<SymbolId> {
         let mut current = Some(from_scope);
 
@@ -194,7 +179,7 @@ impl<'src> ModuleIndex<'src> {
             let scope = self.scope(scope_id);
 
             // skip class scopes for nested lookups
-            if scope.kind != ScopeKind::Class || scope_id == from_scope {
+            if !scope.kind.skip_in_resolution() || scope_id == from_scope {
                 for &symbol_id in &scope.symbols {
                     if self.symbol(symbol_id).name == name {
                         return Some(symbol_id);
@@ -246,6 +231,15 @@ impl<'src> ModuleIndex<'src> {
         }
 
         visible
+    }
+
+    pub fn symbol_containing(&self, pos: TextSize) -> Option<&Symbol<'src>> {
+        for symbol in &self.symbols {
+            if symbol.selection_range.contains(pos) {
+                return Some(symbol);
+            }
+        }
+        None
     }
 }
 

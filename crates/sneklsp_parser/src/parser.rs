@@ -4,6 +4,19 @@ use sneklsp_text::{TextRange, TextSize};
 
 use crate::{ParseError, ParseResult};
 
+macro_rules! parse_simple_keyword_stmt {
+    ($self:expr, $keyword:expr, $stmt_type:ident, $variant:ident) => {{
+        let start = $self.current.range.start();
+        $self.expect($keyword)?;
+        $self.expect_newline_or_eof()?;
+        let end = $self.previous.range.end();
+        let stmt = $self.arena.alloc($stmt_type {
+            range: TextRange::new(start, end),
+        });
+        Ok(Statement::$variant(stmt))
+    }};
+}
+
 pub struct Parser<'src, 'ast> {
     source: &'src str,
     arena: &'ast AstArena,
@@ -34,14 +47,67 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
     }
 
+    #[inline]
+    fn empty_stmt_slice(&self) -> &'ast [Statement<'ast>] {
+        self.arena
+            .alloc_slice(std::iter::empty::<Statement<'ast>>())
+    }
+
+    #[inline]
+    fn empty_expr_slice(&self) -> &'ast [Expression<'ast>] {
+        self.arena
+            .alloc_slice(std::iter::empty::<Expression<'ast>>())
+    }
+
+    #[inline]
+    fn make_binop(
+        &self,
+        left: Expression<'ast>,
+        op: BinOp,
+        right: Expression<'ast>,
+    ) -> Expression<'ast> {
+        let range = TextRange::new(left.range().start(), right.range().end());
+        let expr = self.arena.alloc(BinOpExpr {
+            left,
+            op,
+            right,
+            range,
+        });
+        Expression::BinOp(expr)
+    }
+
+    #[inline]
+    fn make_compare(
+        &self,
+        left: Expression<'ast>,
+        op: CompareOp,
+        right: Expression<'ast>,
+    ) -> Expression<'ast> {
+        let range = TextRange::new(left.range().start(), right.range().end());
+        let expr = self.arena.alloc(CompareExpr {
+            left,
+            op: self.arena.alloc_slice([op]),
+            comparators: self.arena.alloc_slice([right]),
+            range,
+        });
+        Expression::Compare(expr)
+    }
+
+    fn parse_optional_else(&mut self) -> ParseResult<&'ast [Statement<'ast>]> {
+        if self.match_token(TokenKind::Else) {
+            self.expect(TokenKind::Colon)?;
+            self.parse_block()
+        } else {
+            Ok(self.empty_stmt_slice())
+        }
+    }
+
     pub fn parse_module(&mut self) -> ParseResult<Module<'ast>> {
         let start = self.current.range.start();
         let mut body = Vec::with_capacity(32);
 
         while !self.is_at_end() {
-            while self.check(TokenKind::Newline) {
-                self.advance();
-            }
+            self.skip_newlines();
             if self.is_at_end() {
                 break;
             }
@@ -56,6 +122,13 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         })
     }
 
+    #[inline]
+    fn skip_newlines(&mut self) {
+        while self.check(TokenKind::Newline) {
+            self.advance();
+        }
+    }
+
     pub fn parse_module_collecting_errors(&mut self) -> Vec<ParseError> {
         let _ = self.parse_module_with_recovery();
         std::mem::take(&mut self.errors)
@@ -66,9 +139,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let mut body = Vec::new();
 
         while !self.is_at_end() && self.errors.len() < self.max_errors {
-            while self.check(TokenKind::Newline) {
-                self.advance();
-            }
+            self.skip_newlines();
             if self.is_at_end() {
                 break;
             }
@@ -92,15 +163,22 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     fn synchronize(&mut self) {
         // skip tokens until we find a statement boundary
         while !self.is_at_end() {
-            if self.previous.kind == TokenKind::Newline {
-                if self.is_statement_start() {
-                    return;
-                }
+            if self.previous.kind == TokenKind::Newline && self.is_statement_start() {
+                return;
+            }
+            if self.is_sync_point() {
+                return;
             }
 
-            // statement boundary check
-            match self.current.kind {
-                TokenKind::Def
+            self.advance();
+        }
+    }
+
+    #[inline]
+    fn is_sync_point(&self) -> bool {
+        matches!(
+            self.current.kind,
+            TokenKind::Def
                 | TokenKind::Class
                 | TokenKind::If
                 | TokenKind::For
@@ -111,12 +189,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 | TokenKind::Pass
                 | TokenKind::Break
                 | TokenKind::Continue
-                | TokenKind::Dedent => return,
-                _ => {}
-            }
-
-            self.advance();
-        }
+                | TokenKind::Dedent
+        )
     }
 
     fn is_statement_start(&self) -> bool {
@@ -201,17 +275,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             let start = self.current.range.start();
             let name = self.parse_identifier()?;
 
-            let annotation = if self.match_token(TokenKind::Colon) {
-                Some(self.parse_expression()?)
-            } else {
-                None
-            };
-
-            let default = if self.match_token(TokenKind::Eq) {
-                Some(self.parse_expression()?)
-            } else {
-                None
-            };
+            let annotation = self.parse_optional_annotation()?;
+            let default = self.parse_optional_default()?;
 
             let end = self.previous.range.end();
             params.push(Parameter {
@@ -221,15 +286,30 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 range: TextRange::new(start, end),
             });
 
-            if !self.match_token(TokenKind::Comma) {
-                break;
-            }
-            if self.check(TokenKind::RParen) {
+            if !self.match_token(TokenKind::Comma) || self.check(TokenKind::RParen) {
                 break;
             }
         }
 
         Ok(self.arena.alloc_slice(params))
+    }
+
+    #[inline]
+    fn parse_optional_annotation(&mut self) -> ParseResult<Option<Expression<'ast>>> {
+        if self.match_token(TokenKind::Colon) {
+            Ok(Some(self.parse_expression()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[inline]
+    fn parse_optional_default(&mut self) -> ParseResult<Option<Expression<'ast>>> {
+        if self.match_token(TokenKind::Eq) {
+            Ok(Some(self.parse_expression()?))
+        } else {
+            Ok(None)
+        }
     }
 
     fn parse_class_def(&mut self) -> ParseResult<Statement<'ast>> {
@@ -242,8 +322,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             self.expect(TokenKind::RParen)?;
             bases
         } else {
-            self.arena
-                .alloc_slice(std::iter::empty::<Expression<'ast>>())
+            self.empty_expr_slice()
         };
 
         self.expect(TokenKind::Colon)?;
@@ -272,12 +351,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let orelse = if self.match_token(TokenKind::Elif) {
             let elif = self.parse_elif(start)?;
             self.arena.alloc_slice([elif])
-        } else if self.match_token(TokenKind::Else) {
-            self.expect(TokenKind::Colon)?;
-            self.parse_block()?
         } else {
-            self.arena
-                .alloc_slice(std::iter::empty::<Statement<'ast>>())
+            self.parse_optional_else()?
         };
 
         let end = self.previous.range.end();
@@ -300,12 +375,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let orelse = if self.match_token(TokenKind::Elif) {
             let elif = self.parse_elif(start)?;
             self.arena.alloc_slice([elif])
-        } else if self.match_token(TokenKind::Else) {
-            self.expect(TokenKind::Colon)?;
-            self.parse_block()?
         } else {
-            self.arena
-                .alloc_slice(std::iter::empty::<Statement<'ast>>())
+            self.parse_optional_else()?
         };
 
         let end = self.previous.range.end();
@@ -330,13 +401,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         self.expect(TokenKind::Colon)?;
 
         let body = self.parse_block()?;
-        let orelse = if self.match_token(TokenKind::Else) {
-            self.expect(TokenKind::Colon)?;
-            self.parse_block()?
-        } else {
-            self.arena
-                .alloc_slice(std::iter::empty::<Statement<'ast>>())
-        };
+        let orelse = self.parse_optional_else()?;
 
         let end = self.previous.range.end();
 
@@ -359,13 +424,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         self.expect(TokenKind::Colon)?;
 
         let body = self.parse_block()?;
-        let orelse = if self.match_token(TokenKind::Else) {
-            self.expect(TokenKind::Colon)?;
-            self.parse_block()?
-        } else {
-            self.arena
-                .alloc_slice(std::iter::empty::<Statement<'ast>>())
-        };
+        let orelse = self.parse_optional_else()?;
 
         let end = self.previous.range.end();
 
@@ -478,42 +537,15 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 
     fn parse_pass(&mut self) -> ParseResult<Statement<'ast>> {
-        let start = self.current.range.start();
-        self.expect(TokenKind::Pass)?;
-        self.expect_newline_or_eof()?;
-        let end = self.previous.range.end();
-
-        let pass = self.arena.alloc(PassStmt {
-            range: TextRange::new(start, end),
-        });
-
-        Ok(Statement::Pass(pass))
+        parse_simple_keyword_stmt!(self, TokenKind::Pass, PassStmt, Pass)
     }
 
     fn parse_break(&mut self) -> ParseResult<Statement<'ast>> {
-        let start = self.current.range.start();
-        self.expect(TokenKind::Break)?;
-        self.expect_newline_or_eof()?;
-        let end = self.previous.range.end();
-
-        let brk = self.arena.alloc(BreakStmt {
-            range: TextRange::new(start, end),
-        });
-
-        Ok(Statement::Break(brk))
+        parse_simple_keyword_stmt!(self, TokenKind::Break, BreakStmt, Break)
     }
 
     fn parse_continue(&mut self) -> ParseResult<Statement<'ast>> {
-        let start = self.current.range.start();
-        self.expect(TokenKind::Continue)?;
-        self.expect_newline_or_eof()?;
-        let end = self.previous.range.end();
-
-        let cont = self.arena.alloc(ContinueStmt {
-            range: TextRange::new(start, end),
-        });
-
-        Ok(Statement::Continue(cont))
+        parse_simple_keyword_stmt!(self, TokenKind::Continue, ContinueStmt, Continue)
     }
 
     fn parse_expr_or_assign(&mut self) -> ParseResult<Statement<'ast>> {
@@ -536,17 +568,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
 
         // augmented assignment
-        let aug_op = match self.current.kind {
-            TokenKind::PlusEq => Some(BinOp::Add),
-            TokenKind::MinusEq => Some(BinOp::Sub),
-            TokenKind::StarEq => Some(BinOp::Mult),
-            TokenKind::SlashEq => Some(BinOp::Div),
-            TokenKind::PercentEq => Some(BinOp::Mod),
-            // TODO: DoubleSlashEq, LogicalOpEq
-            _ => None,
-        };
-
-        if let Some(op) = aug_op {
+        if let Some(op) = self.try_aug_assign_op() {
             self.advance();
             let value = self.parse_expression()?;
             self.expect_newline_or_eof()?;
@@ -573,15 +595,25 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         Ok(Statement::Expr(expr_stmt))
     }
 
+    #[inline]
+    fn try_aug_assign_op(&self) -> Option<BinOp> {
+        match self.current.kind {
+            TokenKind::PlusEq => Some(BinOp::Add),
+            TokenKind::MinusEq => Some(BinOp::Sub),
+            TokenKind::StarEq => Some(BinOp::Mult),
+            TokenKind::SlashEq => Some(BinOp::Div),
+            TokenKind::PercentEq => Some(BinOp::Mod),
+            _ => None,
+        }
+    }
+
     fn parse_block(&mut self) -> ParseResult<&'ast [Statement<'ast>]> {
         self.expect(TokenKind::Newline)?;
         self.expect(TokenKind::Indent)?;
 
         let mut statements = Vec::new();
         while !self.check(TokenKind::Dedent) && !self.is_at_end() {
-            while self.check(TokenKind::Newline) {
-                self.advance();
-            }
+            self.skip_newlines();
 
             if self.check(TokenKind::Dedent) || self.is_at_end() {
                 break;
@@ -603,40 +635,38 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 
     fn parse_or_expr(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_and_expr()?;
-
-        while self.match_token(TokenKind::Or) {
-            let right = self.parse_and_expr()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op: BinOp::BitOr,
-                right: right,
-                range,
-            });
-
-            left = Expression::BinOp(expr);
-        }
-
-        Ok(left)
+        self.parse_left_assoc_binop(Self::parse_and_expr, &[TokenKind::Or], &[BinOp::BitOr])
     }
 
     fn parse_and_expr(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_not_expr()?;
+        self.parse_left_assoc_binop(Self::parse_not_expr, &[TokenKind::And], &[BinOp::BitAnd])
+    }
 
-        while self.match_token(TokenKind::And) {
-            let right = self.parse_not_expr()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
+    fn parse_left_assoc_binop<F>(
+        &mut self,
+        parse_operand: F,
+        tokens: &[TokenKind],
+        ops: &[BinOp],
+    ) -> ParseResult<Expression<'ast>>
+    where
+        F: Fn(&mut Self) -> ParseResult<Expression<'ast>>,
+    {
+        let mut left = parse_operand(self)?;
 
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op: BinOp::BitAnd,
-                right: right,
-                range,
-            });
+        loop {
+            let op = tokens
+                .iter()
+                .zip(ops.iter())
+                .find(|(tok, _)| self.check(**tok))
+                .map(|(_, op)| *op);
 
-            left = Expression::BinOp(expr);
+            if let Some(op) = op {
+                self.advance();
+                let right = parse_operand(self)?;
+                left = self.make_binop(left, op, right);
+            } else {
+                break;
+            }
         }
 
         Ok(left)
@@ -671,208 +701,84 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 CompareOp::Is
             };
             let right = self.parse_bitor_expr()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(CompareExpr {
-                left: left,
-                op: self.arena.alloc_slice([op]),
-                comparators: self.arena.alloc_slice([right]),
-                range,
-            });
-
-            return Ok(Expression::Compare(expr));
+            return Ok(self.make_compare(left, op, right));
         }
 
         if self.check(TokenKind::Not) {
             self.advance();
             if self.match_token(TokenKind::In) {
                 let right = self.parse_bitor_expr()?;
-                let range = TextRange::new(left.range().start(), right.range().end());
-
-                let expr = self.arena.alloc(CompareExpr {
-                    left: left,
-                    op: self.arena.alloc_slice([CompareOp::NotIn]),
-                    comparators: self.arena.alloc_slice([right]),
-                    range,
-                });
-
-                return Ok(Expression::Compare(expr));
+                return Ok(self.make_compare(left, CompareOp::NotIn, right));
             }
-            // TODO: backtrack if we find `not` but not `not in`
-            return Err(ParseError::UnexpectedToken {
-                offset: self.current.range.start(),
-                expected: "in".to_string(),
-                found: format!("{:?}", self.current.kind),
-            });
+            return Err(self.error_unexpected("in"));
         }
 
-        let op = match self.current.kind {
-            TokenKind::EqEq => CompareOp::Eq,
-            TokenKind::NotEq => CompareOp::NotEq,
-            TokenKind::Lt => CompareOp::Lt,
-            TokenKind::LtEq => CompareOp::LtE,
-            TokenKind::Gt => CompareOp::Gt,
-            TokenKind::GtEq => CompareOp::GtE,
-            TokenKind::In => CompareOp::In,
-            _ => return Ok(left),
-        };
+        if let Some(op) = self.try_compare_op() {
+            self.advance();
+            let right = self.parse_bitor_expr()?;
+            return Ok(self.make_compare(left, op, right));
+        }
 
-        self.advance();
+        Ok(left)
+    }
 
-        let right = self.parse_bitor_expr()?;
-        let range = TextRange::new(left.range().start(), right.range().end());
-
-        let expr = self.arena.alloc(CompareExpr {
-            left: left,
-            op: self.arena.alloc_slice([op]),
-            comparators: self.arena.alloc_slice([right]),
-            range,
-        });
-
-        Ok(Expression::Compare(expr))
+    #[inline]
+    fn try_compare_op(&self) -> Option<CompareOp> {
+        match self.current.kind {
+            TokenKind::EqEq => Some(CompareOp::Eq),
+            TokenKind::NotEq => Some(CompareOp::NotEq),
+            TokenKind::Lt => Some(CompareOp::Lt),
+            TokenKind::LtEq => Some(CompareOp::LtE),
+            TokenKind::Gt => Some(CompareOp::Gt),
+            TokenKind::GtEq => Some(CompareOp::GtE),
+            TokenKind::In => Some(CompareOp::In),
+            _ => None,
+        }
     }
 
     fn parse_bitor_expr(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_bitxor_expr()?;
-
-        while self.match_token(TokenKind::Pipe) {
-            let right = self.parse_bitxor_expr()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op: BinOp::BitOr,
-                right: right,
-                range,
-            });
-
-            left = Expression::BinOp(expr);
-        }
-
-        Ok(left)
+        self.parse_left_assoc_binop(Self::parse_bitxor_expr, &[TokenKind::Pipe], &[BinOp::BitOr])
     }
 
     fn parse_bitxor_expr(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_bitand_expr()?;
-
-        while self.match_token(TokenKind::Caret) {
-            let right = self.parse_bitand_expr()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op: BinOp::BitXor,
-                right: right,
-                range,
-            });
-
-            left = Expression::BinOp(expr);
-        }
-
-        Ok(left)
+        self.parse_left_assoc_binop(
+            Self::parse_bitand_expr,
+            &[TokenKind::Caret],
+            &[BinOp::BitXor],
+        )
     }
 
     fn parse_bitand_expr(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_shift_expr()?;
-
-        while self.match_token(TokenKind::Amp) {
-            let right = self.parse_shift_expr()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op: BinOp::BitAnd,
-                right: right,
-                range,
-            });
-
-            left = Expression::BinOp(expr);
-        }
-
-        Ok(left)
+        self.parse_left_assoc_binop(Self::parse_shift_expr, &[TokenKind::Amp], &[BinOp::BitAnd])
     }
 
     fn parse_shift_expr(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_additive()?;
-
-        loop {
-            let op = match self.current.kind {
-                TokenKind::LtLt => BinOp::LShift,
-                TokenKind::GtGt => BinOp::RShift,
-                _ => break,
-            };
-
-            self.advance();
-            let right = self.parse_additive()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op,
-                right: right,
-                range,
-            });
-
-            left = Expression::BinOp(expr);
-        }
-
-        Ok(left)
+        self.parse_left_assoc_binop(
+            Self::parse_additive,
+            &[TokenKind::LtLt, TokenKind::GtGt],
+            &[BinOp::LShift, BinOp::RShift],
+        )
     }
 
     fn parse_additive(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_multiplicative()?;
-
-        loop {
-            let op = match self.current.kind {
-                TokenKind::Plus => BinOp::Add,
-                TokenKind::Minus => BinOp::Sub,
-                _ => break,
-            };
-
-            self.advance();
-            let right = self.parse_multiplicative()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op,
-                right: right,
-                range,
-            });
-
-            left = Expression::BinOp(expr);
-        }
-
-        Ok(left)
+        self.parse_left_assoc_binop(
+            Self::parse_multiplicative,
+            &[TokenKind::Plus, TokenKind::Minus],
+            &[BinOp::Add, BinOp::Sub],
+        )
     }
 
     fn parse_multiplicative(&mut self) -> ParseResult<Expression<'ast>> {
-        let mut left = self.parse_unary()?;
-
-        loop {
-            let op = match self.current.kind {
-                TokenKind::Star => BinOp::Mult,
-                TokenKind::Slash => BinOp::Div,
-                TokenKind::DoubleSlash => BinOp::FloorDiv,
-                TokenKind::Percent => BinOp::Mod,
-                _ => break,
-            };
-
-            self.advance();
-            let right = self.parse_unary()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op,
-                right: right,
-                range,
-            });
-
-            left = Expression::BinOp(expr);
-        }
-
-        Ok(left)
+        self.parse_left_assoc_binop(
+            Self::parse_unary,
+            &[
+                TokenKind::Star,
+                TokenKind::Slash,
+                TokenKind::DoubleSlash,
+                TokenKind::Percent,
+            ],
+            &[BinOp::Mult, BinOp::Div, BinOp::FloorDiv, BinOp::Mod],
+        )
     }
 
     fn parse_unary(&mut self) -> ParseResult<Expression<'ast>> {
@@ -903,16 +809,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
 
         if self.match_token(TokenKind::DoubleStar) {
             let right = self.parse_unary()?;
-            let range = TextRange::new(left.range().start(), right.range().end());
-
-            let expr = self.arena.alloc(BinOpExpr {
-                left: left,
-                op: BinOp::Pow,
-                right: right,
-                range,
-            });
-
-            return Ok(Expression::BinOp(expr));
+            return Ok(self.make_binop(left, BinOp::Pow, right));
         }
 
         Ok(left)
@@ -949,7 +846,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 let range = TextRange::new(expr.range().start(), self.previous.range.end());
                 let subscript = self.arena.alloc(SubscriptExpr {
                     value: expr,
-                    slice: slice,
+                    slice,
                     range,
                 });
                 expr = Expression::Subscript(subscript);
@@ -1018,115 +915,107 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 Ok(Expression::Name(expr))
             }
 
-            TokenKind::LParen => {
-                self.advance();
+            TokenKind::LParen => self.parse_paren_expr(range),
+            TokenKind::LBracket => self.parse_list_expr(),
+            TokenKind::LBrace => self.parse_dict_expr(),
 
-                if self.check(TokenKind::RParen) {
-                    self.advance(); // empty tuple
-                    let range = TextRange::new(range.start(), self.previous.range.end());
-                    let tuple = self.arena.alloc(TupleExpr {
-                        elts: self
-                            .arena
-                            .alloc_slice(std::iter::empty::<Expression<'ast>>()),
-                        range,
-                    });
-                    return Ok(Expression::Tuple(tuple));
-                }
-
-                let expr = self.parse_expression()?;
-
-                if self.match_token(TokenKind::Comma) {
-                    let mut elts = vec![expr];
-                    if !self.check(TokenKind::RParen) {
-                        let rest = self.parse_expression_list_vec()?;
-                        elts.extend(rest);
-                    }
-                    self.expect(TokenKind::RParen)?;
-                    let range = TextRange::new(range.start(), self.previous.range.end());
-                    let tuple = self.arena.alloc(TupleExpr {
-                        elts: self.arena.alloc_slice(elts),
-                        range,
-                    });
-                    return Ok(Expression::Tuple(tuple));
-                }
-
-                self.expect(TokenKind::RParen)?;
-                Ok(expr)
-            }
-
-            TokenKind::LBracket => {
-                let start = self.current.range.start();
-                self.advance();
-
-                let elts = if self.check(TokenKind::RBracket) {
-                    self.arena
-                        .alloc_slice(std::iter::empty::<Expression<'ast>>())
-                } else {
-                    self.parse_expression_list()?
-                };
-
-                self.expect(TokenKind::RBracket)?;
-                let range = TextRange::new(start, self.previous.range.end());
-
-                let list = self.arena.alloc(ListExpr { elts, range });
-                Ok(Expression::List(list))
-            }
-
-            TokenKind::LBrace => {
-                let start = self.current.range.start();
-                self.advance();
-
-                if self.check(TokenKind::RBrace) {
-                    self.advance();
-                    let range = TextRange::new(start, self.previous.range.end());
-                    let dict = self.arena.alloc(DictExpr {
-                        keys: self
-                            .arena
-                            .alloc_slice(std::iter::empty::<Option<Expression<'ast>>>()),
-                        values: self
-                            .arena
-                            .alloc_slice(std::iter::empty::<Expression<'ast>>()),
-                        range,
-                    });
-                    return Ok(Expression::Dict(dict));
-                }
-
-                let mut keys = Vec::new();
-                let mut values = Vec::new();
-
-                loop {
-                    let key = self.parse_expression()?;
-                    self.expect(TokenKind::Colon)?;
-                    let value = self.parse_expression()?;
-
-                    keys.push(Some(key));
-                    values.push(value);
-
-                    if !self.match_token(TokenKind::Comma) {
-                        break;
-                    }
-                    if self.check(TokenKind::RBrace) {
-                        break;
-                    }
-                }
-
-                self.expect(TokenKind::RBrace)?;
-                let range = TextRange::new(start, self.previous.range.end());
-
-                let dict = self.arena.alloc(DictExpr {
-                    keys: self.arena.alloc_slice(keys),
-                    values: self.arena.alloc_slice(values),
-                    range,
-                });
-                Ok(Expression::Dict(dict))
-            }
-
-            _ => Err(ParseError::UnexpectedToken {
-                offset: range.start(),
-                expected: "expression".to_string(),
-                found: format!("{:?}", token.kind),
-            }),
+            _ => Err(self.error_unexpected("expression")),
         }
+    }
+
+    fn parse_paren_expr(&mut self, start_range: TextRange) -> ParseResult<Expression<'ast>> {
+        self.advance();
+
+        if self.check(TokenKind::RParen) {
+            self.advance();
+            let range = TextRange::new(start_range.start(), self.previous.range.end());
+            let tuple = self.arena.alloc(TupleExpr {
+                elts: self.empty_expr_slice(),
+                range,
+            });
+            return Ok(Expression::Tuple(tuple));
+        }
+
+        let expr = self.parse_expression()?;
+
+        if self.match_token(TokenKind::Comma) {
+            let mut elts = vec![expr];
+            if !self.check(TokenKind::RParen) {
+                let rest = self.parse_expression_list_vec()?;
+                elts.extend(rest);
+            }
+            self.expect(TokenKind::RParen)?;
+            let range = TextRange::new(start_range.start(), self.previous.range.end());
+            let tuple = self.arena.alloc(TupleExpr {
+                elts: self.arena.alloc_slice(elts),
+                range,
+            });
+            return Ok(Expression::Tuple(tuple));
+        }
+
+        self.expect(TokenKind::RParen)?;
+        Ok(expr)
+    }
+
+    fn parse_list_expr(&mut self) -> ParseResult<Expression<'ast>> {
+        let start = self.current.range.start();
+        self.advance();
+
+        let elts = if self.check(TokenKind::RBracket) {
+            self.empty_expr_slice()
+        } else {
+            self.parse_expression_list()?
+        };
+
+        self.expect(TokenKind::RBracket)?;
+        let range = TextRange::new(start, self.previous.range.end());
+
+        let list = self.arena.alloc(ListExpr { elts, range });
+        Ok(Expression::List(list))
+    }
+
+    fn parse_dict_expr(&mut self) -> ParseResult<Expression<'ast>> {
+        let start = self.current.range.start();
+        self.advance();
+
+        if self.check(TokenKind::RBrace) {
+            self.advance();
+            let range = TextRange::new(start, self.previous.range.end());
+            let dict = self.arena.alloc(DictExpr {
+                keys: self
+                    .arena
+                    .alloc_slice(std::iter::empty::<Option<Expression<'ast>>>()),
+                values: self.empty_expr_slice(),
+                range,
+            });
+            return Ok(Expression::Dict(dict));
+        }
+
+        let mut keys = Vec::new();
+        let mut values = Vec::new();
+
+        loop {
+            let key = self.parse_expression()?;
+            self.expect(TokenKind::Colon)?;
+            let value = self.parse_expression()?;
+
+            keys.push(Some(key));
+            values.push(value);
+
+            if !self.match_token(TokenKind::Comma) || self.check(TokenKind::RBrace) {
+                break;
+            }
+        }
+
+        self.expect(TokenKind::RBrace)?;
+        let range = TextRange::new(start, self.previous.range.end());
+
+        let dict = self.arena.alloc(DictExpr {
+            keys: self.arena.alloc_slice(keys),
+            values: self.arena.alloc_slice(values),
+            range,
+        });
+        Ok(Expression::Dict(dict))
     }
 
     fn parse_expression_list(&mut self) -> ParseResult<&'ast [Expression<'ast>]> {
@@ -1137,20 +1026,14 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     fn parse_expression_list_vec(&mut self) -> ParseResult<Vec<Expression<'ast>>> {
         let mut exprs = Vec::new();
 
-        if self.check(TokenKind::RParen)
-            || self.check(TokenKind::RBracket)
-            || self.check(TokenKind::RBrace)
-        {
+        if self.is_closing_bracket() {
             return Ok(exprs);
         }
 
         exprs.push(self.parse_expression()?);
 
         while self.match_token(TokenKind::Comma) {
-            if self.check(TokenKind::RParen)
-                || self.check(TokenKind::RBracket)
-                || self.check(TokenKind::RBrace)
-            {
+            if self.is_closing_bracket() {
                 break;
             }
             exprs.push(self.parse_expression()?);
@@ -1159,17 +1042,21 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         Ok(exprs)
     }
 
+    #[inline]
+    fn is_closing_bracket(&self) -> bool {
+        matches!(
+            self.current.kind,
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace
+        )
+    }
+
     fn parse_identifier(&mut self) -> ParseResult<Identifier<'ast>> {
         if self.check(TokenKind::Name) {
             let id = self.arena.alloc_str(self.token_text());
             self.advance();
             Ok(id)
         } else {
-            Err(ParseError::UnexpectedToken {
-                offset: self.current.range.start(),
-                expected: "identifier".to_string(),
-                found: format!("{:?}", self.current.kind),
-            })
+            Err(self.error_unexpected("identifier"))
         }
     }
 
@@ -1207,11 +1094,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             self.advance();
             Ok(())
         } else {
-            Err(ParseError::UnexpectedToken {
-                offset: self.current.range.start(),
-                expected: format!("{kind:?}"),
-                found: format!("{:?}", self.current.kind),
-            })
+            Err(self.error_unexpected(&format!("{kind:?}")))
         }
     }
 
@@ -1223,17 +1106,22 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         } else if self.check(TokenKind::Eof) || self.check(TokenKind::Dedent) {
             Ok(())
         } else {
-            Err(ParseError::UnexpectedToken {
-                offset: self.current.range.start(),
-                expected: "newline".to_string(),
-                found: format!("{:?}", self.current.kind),
-            })
+            Err(self.error_unexpected("newline"))
         }
     }
 
     #[inline]
     fn is_at_end(&self) -> bool {
         self.current.kind == TokenKind::Eof
+    }
+
+    #[inline]
+    fn error_unexpected(&self, expected: &str) -> ParseError {
+        ParseError::UnexpectedToken {
+            offset: self.current.range.start(),
+            expected: expected.to_string(),
+            found: format!("{:?}", self.current.kind),
+        }
     }
 }
 

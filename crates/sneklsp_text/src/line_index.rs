@@ -51,9 +51,4 @@ impl LineIndex {
         let line_start = self.line_starts.get(position.line as usize)?;
         Some(*line_start + TextSize::new(position.column))
     }
-
-    #[inline]
-    pub fn line_start(&self, line: u32) -> Option<TextSize> {
-        self.line_starts.get(line as usize).copied()
-    }
 }
