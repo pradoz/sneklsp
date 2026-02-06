@@ -39,7 +39,6 @@ impl Debouncer {
                 version,
             },
         );
-        ()
     }
 
     pub fn cancel(&mut self, uri: &Uri) {

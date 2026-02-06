@@ -62,16 +62,11 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             source,
             arena,
             lexer,
-            previous: current.clone(),
+            previous: current,
             current,
             errors: Vec::new(),
             mode: ParseMode::Strict,
         }
-    }
-
-    fn with_recovery(mut self) -> Self {
-        self.mode = ParseMode::Recovering;
-        self
     }
 
     #[inline]
@@ -916,6 +911,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let start = self.start();
         let expr = self.parse_expr()?;
 
+        // annotated assignment: `x: int = 1`
         if self.consume(TokenKind::Colon) {
             let annotation = self.parse_expr()?;
             let value = self.opt(TokenKind::Eq, Self::parse_expr)?;
@@ -930,17 +926,26 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             })));
         }
 
-        if self.consume(TokenKind::Eq) {
-            let value = self.parse_expr()?;
+        // simple or chained assignment: `x = 1` or `a = b = 1`
+        if self.check(TokenKind::Eq) {
+            let mut targets = vec![expr];
+            while self.consume(TokenKind::Eq) {
+                targets.push(self.parse_expr()?);
+            }
+
+            // last item is the value, everything before is a target
+            let value = targets.pop().unwrap();
             let end = self.previous.range.end();
             self.expect_newline()?;
+
             return Ok(Statement::Assign(self.arena.alloc(AssignStmt {
-                targets: self.arena.alloc_slice([expr]),
+                targets: self.arena.alloc_slice(targets),
                 value,
                 range: TextRange::new(start, end),
             })));
         }
 
+        // augmented assignment: `x += 1`
         if let Some(op) = self.aug_op() {
             self.advance();
             let value = self.parse_expr()?;
@@ -954,6 +959,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             })));
         }
 
+        // bare expression statement
         let end = self.previous.range.end();
         self.expect_newline()?;
         Ok(Statement::Expr(self.arena.alloc(ExprStmt {
@@ -1759,5 +1765,26 @@ mod tests {
 
         // should be "x = 123", not "x = 123\n"
         assert_eq!(text, "x = 123");
+    }
+
+    #[test]
+    fn simple_assignment_parses() {
+        let arena = AstArena::new();
+        let module = Parser::new("x = 1", &arena).parse_module().unwrap();
+        assert_eq!(module.body.len(), 1);
+        assert!(matches!(module.body[0], Statement::Assign(_)));
+    }
+
+    #[test]
+    fn chained_assignment() {
+        let arena = AstArena::new();
+        let source = "a = b = 123\n";
+        let module = Parser::new(source, &arena).parse_module().unwrap();
+
+        assert_eq!(module.body.len(), 1);
+        let Statement::Assign(assign) = &module.body[0] else {
+            panic!("expected Assign statement");
+        };
+        assert_eq!(assign.targets.len(), 2);
     }
 }

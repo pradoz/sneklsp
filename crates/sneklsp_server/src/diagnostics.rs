@@ -1,3 +1,4 @@
+use crate::handlers::to_lsp_range;
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
 use sneklsp_index::OwnedIndex;
 use sneklsp_parser::ParseError;
@@ -38,9 +39,9 @@ fn unresolved_reference_diagnostics(
             continue;
         }
 
-        let pos = line_index.position(reference.range.start());
+        let range = to_lsp_range(reference.range, line_index);
         diagnostics.push(Diagnostic {
-            range: single_char_range(pos),
+            range,
             severity: Some(DiagnosticSeverity::WARNING),
             code: None,
             code_description: None,
@@ -72,9 +73,9 @@ fn unused_import_diagnostics(
         }
 
         let name = index.symbol_name(symbol);
-        let pos = line_index.position(symbol.selection_range.start());
+        let range = to_lsp_range(symbol.selection_range, line_index);
         diagnostics.push(Diagnostic {
-            range: single_char_range(pos),
+            range,
             severity: Some(DiagnosticSeverity::HINT),
             code: None,
             code_description: None,
@@ -84,21 +85,6 @@ fn unused_import_diagnostics(
             tags: Some(vec![DiagnosticTag::UNNECESSARY]),
             data: None,
         });
-    }
-}
-
-#[inline]
-fn single_char_range(pos: sneklsp_text::Position) -> Range {
-    let position = Position {
-        line: pos.line,
-        character: pos.column,
-    };
-    Range {
-        start: position,
-        end: Position {
-            line: pos.line,
-            character: pos.column + 1,
-        },
     }
 }
 
@@ -120,8 +106,16 @@ fn to_parse_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic
             found,
         } => {
             let pos = line_index.position(*offset);
+            let start = Position {
+                line: pos.line,
+                character: pos.column,
+            };
+            let end = Position {
+                line: pos.line,
+                character: pos.column + 1,
+            };
             (
-                single_char_range(pos),
+                Range { start, end },
                 format!("expected {expected}, found {found}"),
             )
         }
@@ -136,7 +130,15 @@ fn to_parse_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic
 
         ParseError::InvalidSyntax(offset) => {
             let pos = line_index.position(*offset);
-            (single_char_range(pos), "invalid syntax".to_string())
+            let start = Position {
+                line: pos.line,
+                character: pos.column,
+            };
+            let end = Position {
+                line: pos.line,
+                character: pos.column + 1,
+            };
+            (Range { start, end }, "invalid syntax".to_string())
         }
     };
 

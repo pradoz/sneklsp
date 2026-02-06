@@ -160,7 +160,12 @@ impl OwnedIndex {
 
     #[inline]
     pub fn symbol(&self, id: u32) -> Option<&SymbolData> {
-        self.symbols.iter().find(|s| s.id == id)
+        self.symbols.get(id as usize)
+    }
+
+    #[inline]
+    pub fn scope(&self, id: u32) -> Option<&ScopeData> {
+        self.scopes.get(id as usize)
     }
 
     pub fn scope_at(&self, offset: sneklsp_text::TextSize) -> Option<&ScopeData> {
@@ -179,11 +184,6 @@ impl OwnedIndex {
         }
 
         best
-    }
-
-    #[inline]
-    pub fn scope(&self, id: u32) -> Option<&ScopeData> {
-        self.scopes.iter().find(|s| s.id == id)
     }
 
     #[inline]

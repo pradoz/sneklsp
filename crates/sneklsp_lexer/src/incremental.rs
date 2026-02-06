@@ -52,7 +52,7 @@ pub fn relex(
     let suffix: Vec<Token> = match resume_point {
         Some((idx, _)) => old_tokens[idx..]
             .iter()
-            .map(|t| adjust_token(t, delta))
+            .map(|t| adjust_token(*t, delta))
             .collect(),
         None => Vec::new(),
     };
@@ -116,7 +116,7 @@ fn adjust_offset(offset: TextSize, delta: i64) -> TextSize {
     }
 }
 
-fn adjust_token(token: &Token, delta: i64) -> Token {
+fn adjust_token(token: Token, delta: i64) -> Token {
     Token::new(
         token.kind,
         TextRange::new(
