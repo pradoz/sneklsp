@@ -32,6 +32,18 @@ const fn binop_prec(kind: TokenKind) -> Option<(BinOp, u8, bool)> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParseMode {
+    Strict,
+    Recovering,
+}
+
+enum RecoveredStatement<'ast> {
+    Ok(Statement<'ast>),
+    Error(ParseError),
+    Eof,
+}
+
 pub struct Parser<'src, 'ast> {
     source: &'src str,
     arena: &'ast AstArena,
@@ -39,7 +51,7 @@ pub struct Parser<'src, 'ast> {
     current: Token,
     previous: Token,
     errors: Vec<ParseError>,
-    max_errors: usize,
+    mode: ParseMode,
 }
 
 impl<'src, 'ast> Parser<'src, 'ast> {
@@ -53,8 +65,13 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             previous: current.clone(),
             current,
             errors: Vec::new(),
-            max_errors: 100,
+            mode: ParseMode::Strict,
         }
+    }
+
+    fn with_recovery(mut self) -> Self {
+        self.mode = ParseMode::Recovering;
+        self
     }
 
     #[inline]
@@ -181,13 +198,26 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     pub fn parse_module(&mut self) -> ParseResult<Module<'ast>> {
         let start = self.start();
         let mut body = Vec::with_capacity(32);
+
         while !self.at_end() {
             self.skip_newline();
             if self.at_end() {
                 break;
             }
-            body.push(self.parse_stmt()?);
+
+            match self.try_parse_stmt() {
+                RecoveredStatement::Ok(stmt) => body.push(stmt),
+                RecoveredStatement::Error(e) => {
+                    if self.mode == ParseMode::Strict {
+                        return Err(e);
+                    }
+                    self.errors.push(e);
+                    self.synchronize();
+                }
+                RecoveredStatement::Eof => break,
+            }
         }
+
         Ok(Module {
             body: self.arena.alloc_slice(body),
             range: self.range(start),
@@ -195,31 +225,38 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 
     pub fn parse_module_collecting_errors(&mut self) -> Vec<ParseError> {
-        let mut body = Vec::new();
-        while !self.at_end() && self.errors.len() < self.max_errors {
-            self.skip_newline();
-            if self.at_end() {
-                break;
-            }
-            match self.parse_stmt() {
-                Ok(s) => body.push(s),
-                Err(e) => {
-                    self.errors.push(e);
-                    self.synchronize();
-                }
-            }
-        }
+        self.mode = ParseMode::Recovering;
+        let _ = self.parse_module();
         std::mem::take(&mut self.errors)
     }
 
     fn synchronize(&mut self) {
         while !self.at_end() {
-            if self.previous.kind == TokenKind::Newline && self.is_stmt_start() {
-                return;
+            // if we just passed a newline and are at a statement start, recover here
+            if self.previous.kind == TokenKind::Newline {
+                if self.is_stmt_start() {
+                    return;
+                }
+                // also recover at dedent
+                if self.check(TokenKind::Dedent) {
+                    return;
+                }
             }
+
+            // recover at block-starting keywords
             if self.is_sync_point() {
                 return;
             }
+
+            // skip past dedents to exit broken blocks
+            if self.check(TokenKind::Dedent) {
+                self.advance();
+                if self.is_stmt_start() || self.at_end() {
+                    return;
+                }
+                continue;
+            }
+
             self.advance();
         }
     }
@@ -265,6 +302,17 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     | TokenKind::Lambda
                     | TokenKind::Yield
             )
+    }
+
+    fn try_parse_stmt(&mut self) -> RecoveredStatement<'ast> {
+        if self.at_end() {
+            return RecoveredStatement::Eof;
+        }
+
+        match self.parse_stmt() {
+            Ok(stmt) => RecoveredStatement::Ok(stmt),
+            Err(e) => RecoveredStatement::Error(e),
+        }
     }
 
     fn parse_stmt(&mut self) -> ParseResult<Statement<'ast>> {
