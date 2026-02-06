@@ -7,7 +7,7 @@ use lsp_types::{
 };
 use std::collections::{HashMap, HashSet};
 
-use crate::builtins::BUILTINS;
+use crate::builtins::{BUILTINS, BuiltinInfo};
 use crate::server::DocumentState;
 use sneklsp_index::{OwnedIndex, SymbolData};
 use sneklsp_text::{LineIndex, TextRange, TextSize};
@@ -236,6 +236,11 @@ pub fn handle_goto_definition(
     ))
 }
 
+enum HoverTarget<'a> {
+    Symbol(&'a SymbolData),
+    Builtin(&'static BuiltinInfo),
+}
+
 pub fn handle_hover(params: HoverParams, documents: &HashMap<Uri, DocumentState>) -> Option<Hover> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -243,17 +248,33 @@ pub fn handle_hover(params: HoverParams, documents: &HashMap<Uri, DocumentState>
     let query = get_document_query(&uri, documents)?;
     let offset = from_lsp_position(pos, query.line_index)?;
 
-    let symbol = query.find_symbol_at(offset)?;
+    let target = find_hover_target(&query, offset)?;
+
+    let (signature, doc, range) = match target {
+        HoverTarget::Symbol(symbol) => (
+            format_symbol_signature(symbol, query.index),
+            query.index.symbol_docstring(symbol).map(|s| s.to_string()),
+            Some(to_lsp_range(symbol.selection_range, query.line_index)),
+        ),
+        HoverTarget::Builtin(builtin) => (
+            builtin.signature.to_string(),
+            if builtin.doc.is_empty() {
+                None
+            } else {
+                Some(builtin.doc.to_string())
+            },
+            None,
+        ),
+    };
 
     let mut contents = String::new();
-
     contents.push_str("```python\n");
-    contents.push_str(&format_symbol_signature(symbol, query.index));
+    contents.push_str(&signature);
     contents.push_str("\n```");
 
-    if let Some(doc) = query.index.symbol_docstring(symbol) {
+    if let Some(doc) = doc {
         contents.push_str("\n\n---\n\n");
-        contents.push_str(doc);
+        contents.push_str(&doc);
     }
 
     Some(Hover {
@@ -261,8 +282,30 @@ pub fn handle_hover(params: HoverParams, documents: &HashMap<Uri, DocumentState>
             kind: MarkupKind::Markdown,
             value: contents,
         }),
-        range: Some(to_lsp_range(symbol.selection_range, query.line_index)),
+        range,
     })
+}
+
+fn find_hover_target<'a>(
+    query: &'a DocumentQuery<'a>,
+    offset: TextSize,
+) -> Option<HoverTarget<'a>> {
+    // try symbol in this file first
+    if let Some(symbol) = query.find_symbol_at(offset) {
+        return Some(HoverTarget::Symbol(symbol));
+    }
+
+    // try unresolved reference -> builtin lookup
+    if let Some(reference) = query.index.reference_at(offset) {
+        if reference.resolved.is_none() {
+            let name = query.index.reference_name(reference);
+            if let Some(builtin) = crate::builtins::lookup(name) {
+                return Some(HoverTarget::Builtin(builtin));
+            }
+        }
+    }
+
+    None
 }
 
 fn format_symbol_signature(symbol: &SymbolData, index: &OwnedIndex) -> String {
@@ -348,6 +391,11 @@ pub fn handle_rename(
     })
 }
 
+enum CallTarget<'a> {
+    Symbol(&'a SymbolData),
+    Builtin(&'static crate::builtins::BuiltinInfo),
+}
+
 pub fn handle_signature_help(
     params: SignatureHelpParams,
     documents: &HashMap<Uri, DocumentState>,
@@ -358,24 +406,37 @@ pub fn handle_signature_help(
     let query = get_document_query(&uri, documents)?;
     let offset = from_lsp_position(pos, query.line_index)?;
 
-    let (func_symbol, active_param) = find_call_context(query.index, offset)?;
+    let (target, active_param) = find_call_context(query.index, offset)?;
 
-    let signature_label = match query.index.symbol_signature(func_symbol) {
-        Some(sig) => sig.to_string(),
-        None => {
-            let name = query.index.symbol_name(func_symbol);
-            format!("{}(...)", name)
-        }
+    let (signature_label, documentation) = match target {
+        CallTarget::Symbol(symbol) => (
+            match query.index.symbol_signature(symbol) {
+                Some(sig) => sig.to_string(),
+                None => format!("{}(...)", query.index.symbol_name(symbol)),
+            },
+            query.index.symbol_docstring(symbol).map(|doc| {
+                lsp_types::Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: doc.to_string(),
+                })
+            }),
+        ),
+        CallTarget::Builtin(builtin) => (
+            builtin.signature.to_string(),
+            if builtin.doc.is_empty() {
+                None
+            } else {
+                Some(lsp_types::Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: builtin.doc.to_string(),
+                }))
+            },
+        ),
     };
 
     let signature = SignatureInformation {
         label: signature_label,
-        documentation: query.index.symbol_docstring(func_symbol).map(|doc| {
-            lsp_types::Documentation::MarkupContent(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: doc.to_string(),
-            })
-        }),
+        documentation,
         parameters: None,
         active_parameter: Some(active_param),
     };
@@ -497,7 +558,7 @@ fn symbol_detail(symbol: &SymbolData) -> Option<String> {
     }
 }
 
-fn find_call_context<'a>(index: &'a OwnedIndex, offset: TextSize) -> Option<(&'a SymbolData, u32)> {
+fn find_call_context<'a>(index: &'a OwnedIndex, offset: TextSize) -> Option<(CallTarget<'a>, u32)> {
     let source = index.source();
     let cursor = offset.to_usize().min(source.len());
     let bytes = source.as_bytes();
@@ -528,7 +589,6 @@ fn find_call_context<'a>(index: &'a OwnedIndex, offset: TextSize) -> Option<(&'a
 
     let paren_pos = paren_pos?;
 
-    // count commas at depth 0
     let active_param = count_commas_at_depth_zero(bytes, paren_pos + 1, cursor);
 
     // scan backwards for function name
@@ -549,24 +609,40 @@ fn find_call_context<'a>(index: &'a OwnedIndex, offset: TextSize) -> Option<(&'a
     }
 
     let func_offset = TextSize::new(func_start as u32);
+    let func_name = &source[func_start..name_end];
 
     // try resolving definition and then reference
-    let symbol = index.symbol_at(func_offset).or_else(|| {
-        let reference = index.reference_at(func_offset)?;
-        let sym_id = reference.resolved?;
-        index.symbol(sym_id)
-    })?;
+    if let Some(symbol) = index.symbol_at(func_offset) {
+        if is_callable_symbol(symbol) {
+            return Some((CallTarget::Symbol(symbol), active_param));
+        }
+    };
 
-    if !matches!(
-        symbol.kind,
-        sneklsp_index::SymbolKind::Function
-            | sneklsp_index::SymbolKind::Method
-            | sneklsp_index::SymbolKind::Class
-    ) {
-        return None;
+    if let Some(reference) = index.reference_at(func_offset) {
+        if let Some(sym_id) = reference.resolved {
+            if let Some(symbol) = index.symbol(sym_id) {
+                if is_callable_symbol(symbol) {
+                    return Some((CallTarget::Symbol(symbol), active_param));
+                }
+            }
+        }
     }
 
-    Some((symbol, active_param))
+    // fall back to builtins
+    if let Some(builtin) = crate::builtins::lookup(func_name) {
+        return Some((CallTarget::Builtin(builtin), active_param));
+    }
+
+    None
+}
+
+fn is_callable_symbol(symbol: &SymbolData) -> bool {
+    matches!(
+        symbol.kind,
+        sneklsp_index::SymbolKind::Function
+            | sneklsp_index::SymbolKind::Class
+            | sneklsp_index::SymbolKind::Method
+    )
 }
 
 fn count_commas_at_depth_zero(bytes: &[u8], start: usize, end: usize) -> u32 {
