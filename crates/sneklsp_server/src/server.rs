@@ -9,7 +9,8 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Rename, Request as _
+    Completion, DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, HoverRequest,
+    References, Rename, Request as _, SignatureHelpRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
@@ -55,6 +56,11 @@ pub fn run_server() -> Result<()> {
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Left(true)),
+        signature_help_provider: Some(lsp_types::SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+            retrigger_characters: Some(vec![",".to_string()]),
+            work_done_progress_options: Default::default(),
+        }),
         document_highlight_provider: Some(OneOf::Left(true)),
         ..Default::default()
     };
@@ -290,6 +296,12 @@ impl Server {
             References::METHOD => {
                 let (id, params) = cast_request::<References>(req)?;
                 let result = handlers::handle_references(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            SignatureHelpRequest::METHOD => {
+                let (id, params) = cast_request::<SignatureHelpRequest>(req)?;
+                let result = handlers::handle_signature_help(params, &self.documents);
                 self.send_response(id, result);
             }
 

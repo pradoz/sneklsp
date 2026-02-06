@@ -20,6 +20,7 @@ pub struct SymbolData {
     pub visibility: crate::Visibility,
     pub docstring_start: Option<u32>,
     pub docstring_len: u32,
+    pub signature_range: Option<TextRange>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +64,7 @@ impl OwnedIndex {
                     }
                     None => (None, 0),
                 };
+                let signature_range = compute_signature_range(s, &source);
 
                 SymbolData {
                     id: s.id.as_u32(),
@@ -75,6 +77,7 @@ impl OwnedIndex {
                     visibility: s.visibility,
                     docstring_start,
                     docstring_len,
+                    signature_range,
                 }
             })
             .collect();
@@ -181,6 +184,18 @@ impl OwnedIndex {
         }
     }
 
+    #[inline]
+    pub fn symbol_signature(&self, symbol: &SymbolData) -> Option<&str> {
+        let range = symbol.signature_range?;
+        let start = range.start().to_usize();
+        let end = range.end().to_usize();
+        if end <= self.source.len() {
+            Some(&self.source[start..end])
+        } else {
+            None
+        }
+    }
+
     pub fn symbol_at(&self, offset: sneklsp_text::TextSize) -> Option<&SymbolData> {
         self.symbols
             .iter()
@@ -196,6 +211,47 @@ impl OwnedIndex {
             .iter()
             .filter(move |r| r.resolved == Some(symbol_id))
     }
+}
+
+fn compute_signature_range(symbol: &crate::Symbol<'_>, source: &str) -> Option<TextRange> {
+    match symbol.kind {
+        crate::SymbolKind::Function | crate::SymbolKind::Method | crate::SymbolKind::Class => {}
+        _ => return None,
+    }
+
+    let start = symbol.range.start().to_usize();
+    let end = symbol.range.end().to_usize().min(source.len());
+    let slice = &source[start..end];
+
+    // find colon that starts block body (not inside bracketry)
+    let mut depth = 0u32;
+    let mut colon_offset = None;
+    for (i, b) in slice.bytes().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b':' if depth == 0 => {
+                colon_offset = Some(i);
+                break;
+            }
+            b'\n' if depth == 0 => break,
+            _ => {}
+        }
+    }
+
+    let sig_end = colon_offset.unwrap_or(slice.len());
+
+    let sig_text = &slice[..sig_end]; // trim
+    let trimmed_len = sig_text.trim_end().len();
+
+    if trimmed_len == 0 {
+        return None;
+    }
+
+    Some(TextRange::new(
+        sneklsp_text::TextSize::new(start as u32),
+        sneklsp_text::TextSize::new((start + trimmed_len) as u32),
+    ))
 }
 
 impl std::fmt::Debug for OwnedIndex {

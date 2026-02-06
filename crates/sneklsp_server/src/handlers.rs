@@ -2,7 +2,8 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentSymbol,
     DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
     Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
-    ReferenceParams, RenameParams, SymbolKind, TextEdit, Uri, WorkspaceEdit,
+    ReferenceParams, RenameParams, SignatureHelp, SignatureHelpParams, SignatureInformation,
+    SymbolKind, TextEdit, Uri, WorkspaceEdit,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -246,12 +247,10 @@ pub fn handle_hover(params: HoverParams, documents: &HashMap<Uri, DocumentState>
 
     let mut contents = String::new();
 
-    // hover content
     contents.push_str("```python\n");
     contents.push_str(&format_symbol_signature(symbol, query.index));
     contents.push_str("\n```");
 
-    // add docstring if available
     if let Some(doc) = query.index.symbol_docstring(symbol) {
         contents.push_str("\n\n---\n\n");
         contents.push_str(doc);
@@ -267,33 +266,20 @@ pub fn handle_hover(params: HoverParams, documents: &HashMap<Uri, DocumentState>
 }
 
 fn format_symbol_signature(symbol: &SymbolData, index: &OwnedIndex) -> String {
-    let name = index.symbol_name(symbol);
+    if let Some(sig) = index.symbol_signature(symbol) {
+        return sig.to_string();
+    }
 
+    // fallback for symbols without signature ranges
+    let name = index.symbol_name(symbol);
     match symbol.kind {
-        sneklsp_index::SymbolKind::Function | sneklsp_index::SymbolKind::Method => {
-            format!("def {}(...)", name)
-        }
-        sneklsp_index::SymbolKind::Class => {
-            format!("class {}", name)
-        }
-        sneklsp_index::SymbolKind::Variable => {
-            format!("{}", name)
-        }
-        sneklsp_index::SymbolKind::Parameter => {
-            format!("{}", name)
-        }
-        sneklsp_index::SymbolKind::Import => {
-            format!("import {}", name)
-        }
-        sneklsp_index::SymbolKind::ImportedSymbol => {
-            format!("from ... import {}", name)
-        }
-        sneklsp_index::SymbolKind::Property => {
-            format!("@property\n{}", name)
-        }
-        sneklsp_index::SymbolKind::TypeAlias => {
-            format!("type {} = ...", name)
-        }
+        sneklsp_index::SymbolKind::Variable => name.to_string(),
+        sneklsp_index::SymbolKind::Parameter => name.to_string(),
+        sneklsp_index::SymbolKind::Import => format!("import {}", name),
+        sneklsp_index::SymbolKind::ImportedSymbol => format!("from ... import {}", name),
+        sneklsp_index::SymbolKind::Property => format!("@property\n{}", name),
+        sneklsp_index::SymbolKind::TypeAlias => format!("type {} = ...", name),
+        _ => name.to_string(),
     }
 }
 
@@ -359,6 +345,45 @@ pub fn handle_rename(
         changes: Some(changes),
         document_changes: None,
         change_annotations: None,
+    })
+}
+
+pub fn handle_signature_help(
+    params: SignatureHelpParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<SignatureHelp> {
+    let uri = params.text_document_position_params.text_document.uri;
+    let pos = params.text_document_position_params.position;
+
+    let query = get_document_query(&uri, documents)?;
+    let offset = from_lsp_position(pos, query.line_index)?;
+
+    let (func_symbol, active_param) = find_call_context(query.index, offset)?;
+
+    let signature_label = match query.index.symbol_signature(func_symbol) {
+        Some(sig) => sig.to_string(),
+        None => {
+            let name = query.index.symbol_name(func_symbol);
+            format!("{}(...)", name)
+        }
+    };
+
+    let signature = SignatureInformation {
+        label: signature_label,
+        documentation: query.index.symbol_docstring(func_symbol).map(|doc| {
+            lsp_types::Documentation::MarkupContent(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: doc.to_string(),
+            })
+        }),
+        parameters: None,
+        active_parameter: Some(active_param),
+    };
+
+    Some(SignatureHelp {
+        signatures: vec![signature],
+        active_signature: Some(0),
+        active_parameter: Some(active_param),
     })
 }
 
@@ -490,6 +515,94 @@ fn symbol_detail(symbol: &SymbolData) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn find_call_context<'a>(index: &'a OwnedIndex, offset: TextSize) -> Option<(&'a SymbolData, u32)> {
+    let source = index.source();
+    let cursor = offset.to_usize().min(source.len());
+    let bytes = source.as_bytes();
+
+    // walk backwards to find the opening paren of the call
+    let mut depth: u32 = 0;
+    let mut paren_pos = None;
+
+    for i in (0..cursor).rev() {
+        match bytes[i] {
+            b')' | b']' | b'}' => depth += 1,
+            b'(' => {
+                if depth == 0 {
+                    paren_pos = Some(i);
+                    break;
+                }
+                depth -= 1;
+            }
+            b'[' | b'{' => {
+                if depth == 0 {
+                    break; // already inside bracketry
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    let paren_pos = paren_pos?;
+
+    // count commas at depth 0
+    let active_param = count_commas_at_depth_zero(bytes, paren_pos + 1, cursor);
+
+    // scan backwards for function name
+    let func_end = paren_pos;
+    let mut func_start = func_end;
+    while func_start > 0 && bytes[func_start - 1].is_ascii_whitespace() {
+        func_start -= 1;
+    }
+    let name_end = func_start;
+    while func_start > 0
+        && (bytes[func_start - 1].is_ascii_alphanumeric() || bytes[func_start - 1] == b'_')
+    {
+        func_start -= 1;
+    }
+
+    if func_start == name_end {
+        return None; // no identifier found
+    }
+
+    let func_offset = TextSize::new(func_start as u32);
+
+    // try resolving definition and then reference
+    let symbol = index.symbol_at(func_offset).or_else(|| {
+        let reference = index.reference_at(func_offset)?;
+        let sym_id = reference.resolved?;
+        index.symbol(sym_id)
+    })?;
+
+    if !matches!(
+        symbol.kind,
+        sneklsp_index::SymbolKind::Function
+            | sneklsp_index::SymbolKind::Method
+            | sneklsp_index::SymbolKind::Class
+    ) {
+        return None;
+    }
+
+    Some((symbol, active_param))
+}
+
+fn count_commas_at_depth_zero(bytes: &[u8], start: usize, end: usize) -> u32 {
+    let mut depth: u32 = 0;
+    let mut commas: u32 = 0;
+
+    for &b in &bytes[start..end] {
+        match b {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => commas += 1,
+            _ => {}
+        }
+    }
+
+    commas
 }
 
 fn add_builtin_completions(
