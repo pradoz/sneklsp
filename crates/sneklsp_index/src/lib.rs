@@ -45,6 +45,10 @@ impl<'src> ModuleIndex<'src> {
         }
     }
 
+    pub fn set_symbol_docstring(&mut self, id: SymbolId, docstring: &'src str) {
+        self.symbols[id.as_usize()].docstring = Some(docstring);
+    }
+
     pub fn add_module_scope(&mut self, range: TextRange) -> ScopeId {
         debug_assert!(self.scopes.is_empty(), "module scope must be first");
         let scope = Scope::module(range);

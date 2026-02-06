@@ -64,6 +64,7 @@ pub struct Symbol<'src> {
     pub selection_range: TextRange,
     pub scope: ScopeId,
     pub visibility: Visibility,
+    pub docstring: Option<&'src str>,
 }
 
 impl<'src> Symbol<'src> {
@@ -84,6 +85,13 @@ impl<'src> Symbol<'src> {
             selection_range,
             scope,
             visibility: Visibility::from_name(name),
+            docstring: None,
         }
+    }
+
+    #[inline]
+    pub fn with_docstring(mut self, docstring: Option<&'src str>) -> Self {
+        self.docstring = docstring;
+        self
     }
 }

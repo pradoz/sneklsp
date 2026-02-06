@@ -9,8 +9,7 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, References,
-    Rename, Request as _,
+    Completion, DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Rename, Request as _
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
@@ -53,6 +52,7 @@ pub fn run_server() -> Result<()> {
         }),
         document_symbol_provider: Some(OneOf::Left(true)),
         definition_provider: Some(OneOf::Left(true)),
+        hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Left(true)),
         document_highlight_provider: Some(OneOf::Left(true)),
@@ -278,6 +278,12 @@ impl Server {
             GotoDefinition::METHOD => {
                 let (id, params) = cast_request::<GotoDefinition>(req)?;
                 let result = handlers::handle_goto_definition(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            HoverRequest::METHOD => {
+                let (id, params) = cast_request::<HoverRequest>(req)?;
+                let result = handlers::handle_hover(params, &self.documents);
                 self.send_response(id, result);
             }
 

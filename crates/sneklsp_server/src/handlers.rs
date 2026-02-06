@@ -1,8 +1,8 @@
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentSymbol,
     DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
-    Location, Position, Range, ReferenceParams, RenameParams, SymbolKind, TextEdit, Uri,
-    WorkspaceEdit,
+    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
+    ReferenceParams, RenameParams, SymbolKind, TextEdit, Uri, WorkspaceEdit,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -233,6 +233,68 @@ pub fn handle_goto_definition(
     Some(GotoDefinitionResponse::Scalar(
         query.location(symbol.selection_range),
     ))
+}
+
+pub fn handle_hover(params: HoverParams, documents: &HashMap<Uri, DocumentState>) -> Option<Hover> {
+    let uri = params.text_document_position_params.text_document.uri;
+    let pos = params.text_document_position_params.position;
+
+    let query = get_document_query(&uri, documents)?;
+    let offset = from_lsp_position(pos, query.line_index)?;
+
+    let symbol = query.find_symbol_at(offset)?;
+
+    let mut contents = String::new();
+
+    // hover content
+    contents.push_str("```python\n");
+    contents.push_str(&format_symbol_signature(symbol, query.index));
+    contents.push_str("\n```");
+
+    // add docstring if available
+    if let Some(doc) = query.index.symbol_docstring(symbol) {
+        contents.push_str("\n\n---\n\n");
+        contents.push_str(doc);
+    }
+
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: contents,
+        }),
+        range: Some(to_lsp_range(symbol.selection_range, query.line_index)),
+    })
+}
+
+fn format_symbol_signature(symbol: &SymbolData, index: &OwnedIndex) -> String {
+    let name = index.symbol_name(symbol);
+
+    match symbol.kind {
+        sneklsp_index::SymbolKind::Function | sneklsp_index::SymbolKind::Method => {
+            format!("def {}(...)", name)
+        }
+        sneklsp_index::SymbolKind::Class => {
+            format!("class {}", name)
+        }
+        sneklsp_index::SymbolKind::Variable => {
+            format!("{}", name)
+        }
+        sneklsp_index::SymbolKind::Parameter => {
+            format!("{}", name)
+        }
+        sneklsp_index::SymbolKind::Import => {
+            format!("import {}", name)
+        }
+        sneklsp_index::SymbolKind::ImportedSymbol => {
+            format!("from ... import {}", name)
+        }
+        sneklsp_index::SymbolKind::Property => {
+            format!("@property\n{}", name)
+        }
+        sneklsp_index::SymbolKind::TypeAlias => {
+            format!("type {} = ...", name)
+        }
+    }
 }
 
 pub fn handle_references(

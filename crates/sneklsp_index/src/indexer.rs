@@ -18,6 +18,15 @@ impl<'src> Indexer<'src> {
         }
     }
 
+    fn extract_docstring(&self, body: &[Statement<'src>]) -> Option<&'src str> {
+        if let Some(Statement::Expr(expr_stmt)) = body.first() {
+            if let Expression::String(s) = expr_stmt.value {
+                return Some(s.value);
+            }
+        }
+        None
+    }
+
     pub fn index(mut self, module: &Module<'src>) -> ModuleIndex<'src> {
         self.index.add_module_scope(module.range);
         self.visit_stmts(module.body);
@@ -88,9 +97,14 @@ impl<'src> Indexer<'src> {
         };
 
         let name_range = self.name_range(func.name, func.range);
-        let _symbol_id =
+        let docstring = self.extract_docstring(func.body);
+        let symbol_id =
             self.index
                 .add_symbol(func.name, kind, func.range, name_range, self.current_scope);
+
+        if let Some(doc) = docstring {
+            self.index.set_symbol_docstring(symbol_id, doc);
+        }
 
         let func_scope = self
             .index
@@ -119,9 +133,14 @@ impl<'src> Indexer<'src> {
         };
 
         let name_range = self.name_range(func.name, func.range);
-        let _symbol_id =
+        let docstring = self.extract_docstring(func.body);
+        let symbol_id =
             self.index
                 .add_symbol(func.name, kind, func.range, name_range, self.current_scope);
+
+        if let Some(doc) = docstring {
+            self.index.set_symbol_docstring(symbol_id, doc);
+        }
 
         let func_scope = self
             .index
@@ -189,13 +208,19 @@ impl<'src> Indexer<'src> {
         }
 
         let name_range = self.name_range(class.name, class.range);
-        let _symbol_id = self.index.add_symbol(
+        let docstring = self.extract_docstring(class.body);
+
+        let symbol_id = self.index.add_symbol(
             class.name,
             SymbolKind::Class,
             class.range,
             name_range,
             self.current_scope,
         );
+
+        if let Some(doc) = docstring {
+            self.index.set_symbol_docstring(symbol_id, doc);
+        }
 
         self.visit_exprs(class.bases);
 

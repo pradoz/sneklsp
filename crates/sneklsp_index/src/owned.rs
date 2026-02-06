@@ -18,6 +18,8 @@ pub struct SymbolData {
     pub selection_range: TextRange,
     pub scope: u32,
     pub visibility: crate::Visibility,
+    pub docstring_start: Option<u32>,
+    pub docstring_len: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +49,21 @@ impl OwnedIndex {
             .map(|s| {
                 let name_start = s.selection_range.start().to_u32();
                 let name_len = s.name.len() as u16;
+                let (docstring_start, docstring_len) = match s.docstring {
+                    Some(doc) => {
+                        let search_start = s.range.start().to_usize();
+                        let search_end = (s.range.end().to_usize()).min(source.len());
+                        let search_region = &source[search_start..search_end];
+
+                        if let Some(offset) = search_region.find(doc) {
+                            (Some((search_start + offset) as u32), doc.len() as u32)
+                        } else {
+                            (None, 0)
+                        }
+                    }
+                    None => (None, 0),
+                };
+
                 SymbolData {
                     id: s.id.as_u32(),
                     name_start,
@@ -56,6 +73,8 @@ impl OwnedIndex {
                     selection_range: s.selection_range,
                     scope: s.scope.as_u32(),
                     visibility: s.visibility,
+                    docstring_start,
+                    docstring_len,
                 }
             })
             .collect();
@@ -149,6 +168,17 @@ impl OwnedIndex {
     #[inline]
     pub fn root_scope(&self) -> Option<&ScopeData> {
         self.scopes.first()
+    }
+
+    #[inline]
+    pub fn symbol_docstring(&self, symbol: &SymbolData) -> Option<&str> {
+        let start = symbol.docstring_start? as usize;
+        let end = start + symbol.docstring_len as usize;
+        if end <= self.source.len() {
+            Some(&self.source[start..end])
+        } else {
+            None
+        }
     }
 
     pub fn symbol_at(&self, offset: sneklsp_text::TextSize) -> Option<&SymbolData> {
