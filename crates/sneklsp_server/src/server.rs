@@ -21,7 +21,7 @@ use lsp_types::{
 
 use crate::background::{BackgroundParser, ParseResult};
 use crate::debouncer::Debouncer;
-use crate::diagnostics::to_diagnostics;
+use crate::diagnostics::{parse_diagnostics, semantic_diagnostics};
 use crate::document::{Document, EditRecord};
 use crate::handlers;
 
@@ -261,7 +261,13 @@ impl Server {
             "publishing diagnostics"
         );
 
-        let diagnostics = to_diagnostics(&errors, &line_index);
+        let mut diagnostics = parse_diagnostics(&errors, &line_index);
+        if let Some(state) = self.documents.get(&uri) {
+            if let Some(index) = state.document.index.as_ref() {
+                diagnostics.extend(semantic_diagnostics(index, &state.document.line_index));
+            }
+        }
+
         self.send_diagnostics(&uri, diagnostics);
     }
 
