@@ -4,16 +4,27 @@ use sneklsp_text::TextRange;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Statement<'ast> {
     FunctionDef(&'ast FunctionDef<'ast>),
+    AsyncFunctionDef(&'ast AsyncFunctionDef<'ast>),
     ClassDef(&'ast ClassDef<'ast>),
     Return(&'ast ReturnStmt<'ast>),
     Assign(&'ast AssignStmt<'ast>),
     AugAssign(&'ast AugAssignStmt<'ast>),
+    AnnAssign(&'ast AnnAssignStmt<'ast>),
     If(&'ast IfStmt<'ast>),
     For(&'ast ForStmt<'ast>),
+    AsyncFor(&'ast AsyncForStmt<'ast>),
     While(&'ast WhileStmt<'ast>),
+    With(&'ast WithStmt<'ast>),
+    AsyncWith(&'ast AsyncWithStmt<'ast>),
+    Try(&'ast TryStmt<'ast>),
+    Raise(&'ast RaiseStmt<'ast>),
+    Assert(&'ast AssertStmt<'ast>),
     Import(&'ast ImportStmt<'ast>),
     ImportFrom(&'ast ImportFromStmt<'ast>),
+    Global(&'ast GlobalStmt<'ast>),
+    Nonlocal(&'ast NonlocalStmt<'ast>),
     Expr(&'ast ExprStmt<'ast>),
+    Delete(&'ast DeleteStmt<'ast>),
     Pass(&'ast PassStmt),
     Break(&'ast BreakStmt),
     Continue(&'ast ContinueStmt),
@@ -23,16 +34,27 @@ impl<'ast> Statement<'ast> {
     pub const fn range(&self) -> TextRange {
         match self {
             Statement::FunctionDef(s) => s.range,
+            Statement::AsyncFunctionDef(s) => s.range,
             Statement::ClassDef(s) => s.range,
             Statement::Return(s) => s.range,
             Statement::Assign(s) => s.range,
             Statement::AugAssign(s) => s.range,
+            Statement::AnnAssign(s) => s.range,
             Statement::If(s) => s.range,
             Statement::For(s) => s.range,
+            Statement::AsyncFor(s) => s.range,
             Statement::While(s) => s.range,
+            Statement::With(s) => s.range,
+            Statement::AsyncWith(s) => s.range,
+            Statement::Try(s) => s.range,
+            Statement::Raise(s) => s.range,
+            Statement::Assert(s) => s.range,
             Statement::Import(s) => s.range,
             Statement::ImportFrom(s) => s.range,
+            Statement::Global(s) => s.range,
+            Statement::Nonlocal(s) => s.range,
             Statement::Expr(s) => s.range,
+            Statement::Delete(s) => s.range,
             Statement::Pass(s) => s.range,
             Statement::Break(s) => s.range,
             Statement::Continue(s) => s.range,
@@ -43,9 +65,32 @@ impl<'ast> Statement<'ast> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FunctionDef<'ast> {
     pub name: Identifier<'ast>,
-    pub params: &'ast [Parameter<'ast>],
+    pub params: &'ast Parameters<'ast>,
     pub body: &'ast [Statement<'ast>],
+    pub decorators: &'ast [Expression<'ast>],
     pub returns: Option<Expression<'ast>>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AsyncFunctionDef<'ast> {
+    pub name: Identifier<'ast>,
+    pub params: &'ast Parameters<'ast>,
+    pub body: &'ast [Statement<'ast>],
+    pub decorators: &'ast [Expression<'ast>],
+    pub returns: Option<Expression<'ast>>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Parameters<'ast> {
+    pub posonlyargs: &'ast [Parameter<'ast>],
+    pub args: &'ast [Parameter<'ast>],
+    pub vararg: Option<&'ast Parameter<'ast>>,
+    pub kwonlyargs: &'ast [Parameter<'ast>],
+    pub kw_defaults: &'ast [Option<Expression<'ast>>],
+    pub kwarg: Option<&'ast Parameter<'ast>>,
+    pub defaults: &'ast [Expression<'ast>],
     pub range: TextRange,
 }
 
@@ -61,7 +106,16 @@ pub struct Parameter<'ast> {
 pub struct ClassDef<'ast> {
     pub name: Identifier<'ast>,
     pub bases: &'ast [Expression<'ast>],
+    pub keywords: &'ast [Keyword<'ast>],
     pub body: &'ast [Statement<'ast>],
+    pub decorators: &'ast [Expression<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Keyword<'ast> {
+    pub arg: Option<Identifier<'ast>>,
+    pub value: Expression<'ast>,
     pub range: TextRange,
 }
 
@@ -87,6 +141,15 @@ pub struct AugAssignStmt<'ast> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnnAssignStmt<'ast> {
+    pub target: Expression<'ast>,
+    pub annotation: Expression<'ast>,
+    pub value: Option<Expression<'ast>>,
+    pub simple: bool,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IfStmt<'ast> {
     pub test: Expression<'ast>,
     pub body: &'ast [Statement<'ast>],
@@ -104,10 +167,71 @@ pub struct ForStmt<'ast> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AsyncForStmt<'ast> {
+    pub target: Expression<'ast>,
+    pub iter: Expression<'ast>,
+    pub body: &'ast [Statement<'ast>],
+    pub orelse: &'ast [Statement<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WhileStmt<'ast> {
     pub test: Expression<'ast>,
     pub body: &'ast [Statement<'ast>],
     pub orelse: &'ast [Statement<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WithStmt<'ast> {
+    pub items: &'ast [WithItem<'ast>],
+    pub body: &'ast [Statement<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WithItem<'ast> {
+    pub context_expr: Expression<'ast>,
+    pub optional_vars: Option<Expression<'ast>>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AsyncWithStmt<'ast> {
+    pub items: &'ast [WithItem<'ast>],
+    pub body: &'ast [Statement<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TryStmt<'ast> {
+    pub body: &'ast [Statement<'ast>],
+    pub handlers: &'ast [ExceptHandler<'ast>],
+    pub orelse: &'ast [Statement<'ast>],
+    pub finalbody: &'ast [Statement<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExceptHandler<'ast> {
+    pub typ: Option<Expression<'ast>>,
+    pub name: Option<Identifier<'ast>>,
+    pub body: &'ast [Statement<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RaiseStmt<'ast> {
+    pub exc: Option<Expression<'ast>>,
+    pub cause: Option<Expression<'ast>>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AssertStmt<'ast> {
+    pub test: Expression<'ast>,
+    pub msg: Option<Expression<'ast>>,
     pub range: TextRange,
 }
 
@@ -133,8 +257,26 @@ pub struct Alias<'ast> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlobalStmt<'ast> {
+    pub names: &'ast [Identifier<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NonlocalStmt<'ast> {
+    pub names: &'ast [Identifier<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExprStmt<'ast> {
     pub value: Expression<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeleteStmt<'ast> {
+    pub targets: &'ast [Expression<'ast>],
     pub range: TextRange,
 }
 

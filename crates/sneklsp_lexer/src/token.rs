@@ -100,6 +100,10 @@ pub enum TokenKind {
     Indent,
     Dedent,
 
+    // fancy
+    ColonEq,
+    Ellipsis,
+
     // special
     Eof,
     Error,

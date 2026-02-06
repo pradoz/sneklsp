@@ -8,21 +8,37 @@ Ok(
             FunctionDef(
                 FunctionDef {
                     name: "greet",
-                    params: [
-                        Parameter {
-                            name: "name",
-                            annotation: None,
-                            default: None,
-                            range: TextRange {
-                                start: TextSize(
-                                    10,
-                                ),
-                                end: TextSize(
-                                    14,
-                                ),
+                    params: Parameters {
+                        posonlyargs: [],
+                        args: [
+                            Parameter {
+                                name: "name",
+                                annotation: None,
+                                default: None,
+                                range: TextRange {
+                                    start: TextSize(
+                                        10,
+                                    ),
+                                    end: TextSize(
+                                        14,
+                                    ),
+                                },
                             },
+                        ],
+                        vararg: None,
+                        kwonlyargs: [],
+                        kw_defaults: [],
+                        kwarg: None,
+                        defaults: [],
+                        range: TextRange {
+                            start: TextSize(
+                                10,
+                            ),
+                            end: TextSize(
+                                14,
+                            ),
                         },
-                    ],
+                    },
                     body: [
                         Return(
                             ReturnStmt {
@@ -72,12 +88,13 @@ Ok(
                                         21,
                                     ),
                                     end: TextSize(
-                                        47,
+                                        44,
                                     ),
                                 },
                             },
                         ),
                     ],
+                    decorators: [],
                     returns: None,
                     range: TextRange {
                         start: TextSize(
@@ -92,34 +109,50 @@ Ok(
             FunctionDef(
                 FunctionDef {
                     name: "add",
-                    params: [
-                        Parameter {
-                            name: "a",
-                            annotation: None,
-                            default: None,
-                            range: TextRange {
-                                start: TextSize(
-                                    55,
-                                ),
-                                end: TextSize(
-                                    56,
-                                ),
+                    params: Parameters {
+                        posonlyargs: [],
+                        args: [
+                            Parameter {
+                                name: "a",
+                                annotation: None,
+                                default: None,
+                                range: TextRange {
+                                    start: TextSize(
+                                        55,
+                                    ),
+                                    end: TextSize(
+                                        56,
+                                    ),
+                                },
                             },
-                        },
-                        Parameter {
-                            name: "b",
-                            annotation: None,
-                            default: None,
-                            range: TextRange {
-                                start: TextSize(
-                                    58,
-                                ),
-                                end: TextSize(
-                                    59,
-                                ),
+                            Parameter {
+                                name: "b",
+                                annotation: None,
+                                default: None,
+                                range: TextRange {
+                                    start: TextSize(
+                                        58,
+                                    ),
+                                    end: TextSize(
+                                        59,
+                                    ),
+                                },
                             },
+                        ],
+                        vararg: None,
+                        kwonlyargs: [],
+                        kw_defaults: [],
+                        kwarg: None,
+                        defaults: [],
+                        range: TextRange {
+                            start: TextSize(
+                                55,
+                            ),
+                            end: TextSize(
+                                59,
+                            ),
                         },
-                    ],
+                    },
                     body: [
                         Return(
                             ReturnStmt {
@@ -169,12 +202,13 @@ Ok(
                                         66,
                                     ),
                                     end: TextSize(
-                                        81,
+                                        78,
                                     ),
                                 },
                             },
                         ),
                     ],
+                    decorators: [],
                     returns: None,
                     range: TextRange {
                         start: TextSize(
@@ -189,21 +223,37 @@ Ok(
             FunctionDef(
                 FunctionDef {
                     name: "factorial",
-                    params: [
-                        Parameter {
-                            name: "n",
-                            annotation: None,
-                            default: None,
-                            range: TextRange {
-                                start: TextSize(
-                                    95,
-                                ),
-                                end: TextSize(
-                                    96,
-                                ),
+                    params: Parameters {
+                        posonlyargs: [],
+                        args: [
+                            Parameter {
+                                name: "n",
+                                annotation: None,
+                                default: None,
+                                range: TextRange {
+                                    start: TextSize(
+                                        95,
+                                    ),
+                                    end: TextSize(
+                                        96,
+                                    ),
+                                },
                             },
+                        ],
+                        vararg: None,
+                        kwonlyargs: [],
+                        kw_defaults: [],
+                        kwarg: None,
+                        defaults: [],
+                        range: TextRange {
+                            start: TextSize(
+                                95,
+                            ),
+                            end: TextSize(
+                                96,
+                            ),
                         },
-                    ],
+                    },
                     body: [
                         If(
                             IfStmt {
@@ -273,7 +323,7 @@ Ok(
                                                     122,
                                                 ),
                                                 end: TextSize(
-                                                    135,
+                                                    130,
                                                 ),
                                             },
                                         },
@@ -365,6 +415,7 @@ Ok(
                                                             },
                                                         ),
                                                     ],
+                                                    keywords: [],
                                                     range: TextRange {
                                                         start: TextSize(
                                                             146,
@@ -391,12 +442,13 @@ Ok(
                                         135,
                                     ),
                                     end: TextSize(
-                                        165,
+                                        162,
                                     ),
                                 },
                             },
                         ),
                     ],
+                    decorators: [],
                     returns: None,
                     range: TextRange {
                         start: TextSize(
@@ -412,51 +464,68 @@ Ok(
                 ClassDef {
                     name: "Point",
                     bases: [],
+                    keywords: [],
                     body: [
                         FunctionDef(
                             FunctionDef {
                                 name: "__init__",
-                                params: [
-                                    Parameter {
-                                        name: "self",
-                                        annotation: None,
-                                        default: None,
-                                        range: TextRange {
-                                            start: TextSize(
-                                                195,
-                                            ),
-                                            end: TextSize(
-                                                199,
-                                            ),
+                                params: Parameters {
+                                    posonlyargs: [],
+                                    args: [
+                                        Parameter {
+                                            name: "self",
+                                            annotation: None,
+                                            default: None,
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    195,
+                                                ),
+                                                end: TextSize(
+                                                    199,
+                                                ),
+                                            },
                                         },
-                                    },
-                                    Parameter {
-                                        name: "x",
-                                        annotation: None,
-                                        default: None,
-                                        range: TextRange {
-                                            start: TextSize(
-                                                201,
-                                            ),
-                                            end: TextSize(
-                                                202,
-                                            ),
+                                        Parameter {
+                                            name: "x",
+                                            annotation: None,
+                                            default: None,
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    201,
+                                                ),
+                                                end: TextSize(
+                                                    202,
+                                                ),
+                                            },
                                         },
-                                    },
-                                    Parameter {
-                                        name: "y",
-                                        annotation: None,
-                                        default: None,
-                                        range: TextRange {
-                                            start: TextSize(
-                                                204,
-                                            ),
-                                            end: TextSize(
-                                                205,
-                                            ),
+                                        Parameter {
+                                            name: "y",
+                                            annotation: None,
+                                            default: None,
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    204,
+                                                ),
+                                                end: TextSize(
+                                                    205,
+                                                ),
+                                            },
                                         },
+                                    ],
+                                    vararg: None,
+                                    kwonlyargs: [],
+                                    kw_defaults: [],
+                                    kwarg: None,
+                                    defaults: [],
+                                    range: TextRange {
+                                        start: TextSize(
+                                            195,
+                                        ),
+                                        end: TextSize(
+                                            205,
+                                        ),
                                     },
-                                ],
+                                },
                                 body: [
                                     Assign(
                                         AssignStmt {
@@ -506,7 +575,7 @@ Ok(
                                                     216,
                                                 ),
                                                 end: TextSize(
-                                                    227,
+                                                    226,
                                                 ),
                                             },
                                         },
@@ -559,12 +628,13 @@ Ok(
                                                     235,
                                                 ),
                                                 end: TextSize(
-                                                    246,
+                                                    245,
                                                 ),
                                             },
                                         },
                                     ),
                                 ],
+                                decorators: [],
                                 returns: None,
                                 range: TextRange {
                                     start: TextSize(
@@ -579,21 +649,37 @@ Ok(
                         FunctionDef(
                             FunctionDef {
                                 name: "distance",
-                                params: [
-                                    Parameter {
-                                        name: "self",
-                                        annotation: None,
-                                        default: None,
-                                        range: TextRange {
-                                            start: TextSize(
-                                                264,
-                                            ),
-                                            end: TextSize(
-                                                268,
-                                            ),
+                                params: Parameters {
+                                    posonlyargs: [],
+                                    args: [
+                                        Parameter {
+                                            name: "self",
+                                            annotation: None,
+                                            default: None,
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    264,
+                                                ),
+                                                end: TextSize(
+                                                    268,
+                                                ),
+                                            },
                                         },
+                                    ],
+                                    vararg: None,
+                                    kwonlyargs: [],
+                                    kw_defaults: [],
+                                    kwarg: None,
+                                    defaults: [],
+                                    range: TextRange {
+                                        start: TextSize(
+                                            264,
+                                        ),
+                                        end: TextSize(
+                                            268,
+                                        ),
                                     },
-                                ],
+                                },
                                 body: [
                                     Return(
                                         ReturnStmt {
@@ -747,12 +833,13 @@ Ok(
                                                     279,
                                                 ),
                                                 end: TextSize(
-                                                    323,
+                                                    320,
                                                 ),
                                             },
                                         },
                                     ),
                                 ],
+                                decorators: [],
                                 returns: None,
                                 range: TextRange {
                                     start: TextSize(
@@ -765,6 +852,7 @@ Ok(
                             },
                         ),
                     ],
+                    decorators: [],
                     range: TextRange {
                         start: TextSize(
                             165,
@@ -869,6 +957,7 @@ Ok(
                                                             },
                                                         ),
                                                     ],
+                                                    keywords: [],
                                                     range: TextRange {
                                                         start: TextSize(
                                                             360,
@@ -880,6 +969,7 @@ Ok(
                                                 },
                                             ),
                                         ],
+                                        keywords: [],
                                         range: TextRange {
                                             start: TextSize(
                                                 354,
@@ -895,7 +985,7 @@ Ok(
                                         354,
                                     ),
                                     end: TextSize(
-                                        376,
+                                        375,
                                     ),
                                 },
                             },
@@ -961,6 +1051,7 @@ Ok(
                                                             },
                                                         ),
                                                     ],
+                                                    keywords: [],
                                                     range: TextRange {
                                                         start: TextSize(
                                                             386,
@@ -972,6 +1063,7 @@ Ok(
                                                 },
                                             ),
                                         ],
+                                        keywords: [],
                                         range: TextRange {
                                             start: TextSize(
                                                 380,
@@ -987,7 +1079,7 @@ Ok(
                                         380,
                                     ),
                                     end: TextSize(
-                                        397,
+                                        396,
                                     ),
                                 },
                             },
@@ -1040,6 +1132,7 @@ Ok(
                                                             },
                                                         ),
                                                     ],
+                                                    keywords: [],
                                                     range: TextRange {
                                                         start: TextSize(
                                                             407,
@@ -1051,6 +1144,7 @@ Ok(
                                                 },
                                             ),
                                         ],
+                                        keywords: [],
                                         range: TextRange {
                                             start: TextSize(
                                                 401,
@@ -1066,7 +1160,7 @@ Ok(
                                         401,
                                     ),
                                     end: TextSize(
-                                        421,
+                                        420,
                                     ),
                                 },
                             },

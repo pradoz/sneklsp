@@ -40,21 +40,47 @@ impl<'src> Indexer<'src> {
     fn visit_stmt(&mut self, stmt: Statement<'src>) {
         match stmt {
             Statement::FunctionDef(f) => self.visit_function_def(f),
+            Statement::AsyncFunctionDef(f) => self.visit_async_function_def(f),
             Statement::ClassDef(c) => self.visit_class_def(c),
             Statement::Return(r) => self.visit_return(r),
             Statement::Assign(a) => self.visit_assign(a),
             Statement::AugAssign(a) => self.visit_aug_assign(a),
+            Statement::AnnAssign(a) => self.visit_ann_assign(a),
             Statement::If(i) => self.visit_if(i),
             Statement::For(f) => self.visit_for(f),
+            Statement::AsyncFor(f) => self.visit_async_for(f),
             Statement::While(w) => self.visit_while(w),
+            Statement::With(w) => self.visit_with(w),
+            Statement::AsyncWith(w) => self.visit_async_with(w),
+            Statement::Try(t) => self.visit_try(t),
+            Statement::Raise(r) => self.visit_raise(r),
+            Statement::Assert(a) => self.visit_assert(a),
             Statement::Import(i) => self.visit_import(i),
             Statement::ImportFrom(i) => self.visit_import_from(i),
+            Statement::Global(g) => self.visit_global(g),
+            Statement::Nonlocal(n) => self.visit_nonlocal(n),
             Statement::Expr(e) => self.visit_expr_stmt(e),
+            Statement::Delete(d) => self.visit_delete(d),
             Statement::Pass(_) | Statement::Break(_) | Statement::Continue(_) => {}
         }
     }
 
+    fn with_scope<F, R>(&mut self, scope: ScopeId, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        let parent_scope = self.current_scope;
+        self.current_scope = scope;
+        let result = f(self); // execute in dirrent scope
+        self.current_scope = parent_scope; // restore scope
+        result
+    }
+
     fn visit_function_def(&mut self, func: &FunctionDef<'src>) {
+        for decorator in func.decorators {
+            self.visit_expr(*decorator);
+        }
+
         let kind = if self.is_in_class_scope() {
             SymbolKind::Method
         } else {
@@ -71,9 +97,7 @@ impl<'src> Indexer<'src> {
             .add_scope(ScopeKind::Function, self.current_scope, func.range);
 
         self.with_scope(func_scope, |this| {
-            for p in func.params {
-                this.visit_parameter(p);
-            }
+            this.visit_parameters(func.params);
 
             if let Some(returns) = func.returns {
                 this.visit_expr(returns);
@@ -83,15 +107,61 @@ impl<'src> Indexer<'src> {
         });
     }
 
-    fn with_scope<F, R>(&mut self, scope: ScopeId, f: F) -> R
-    where
-        F: FnOnce(&mut Self) -> R,
-    {
-        let parent_scope = self.current_scope;
-        self.current_scope = scope;
-        let result = f(self); // execute in dirrent scope
-        self.current_scope = parent_scope; // restore scope
-        result
+    fn visit_async_function_def(&mut self, func: &AsyncFunctionDef<'src>) {
+        for decorator in func.decorators {
+            self.visit_expr(*decorator);
+        }
+
+        let kind = if self.is_in_class_scope() {
+            SymbolKind::Method
+        } else {
+            SymbolKind::Function
+        };
+
+        let name_range = self.name_range(func.name, func.range);
+        let _symbol_id =
+            self.index
+                .add_symbol(func.name, kind, func.range, name_range, self.current_scope);
+
+        let func_scope = self
+            .index
+            .add_scope(ScopeKind::Function, self.current_scope, func.range);
+
+        self.with_scope(func_scope, |this| {
+            this.visit_parameters(func.params);
+
+            if let Some(returns) = func.returns {
+                this.visit_expr(returns);
+            }
+
+            this.visit_stmts(func.body);
+        });
+    }
+
+    fn visit_parameters(&mut self, params: &Parameters<'src>) {
+        for p in params.posonlyargs {
+            self.visit_parameter(p);
+        }
+        for p in params.args {
+            self.visit_parameter(p);
+        }
+        if let Some(vararg) = params.vararg {
+            self.visit_parameter(vararg);
+        }
+        for p in params.kwonlyargs {
+            self.visit_parameter(p);
+        }
+        if let Some(kwarg) = params.kwarg {
+            self.visit_parameter(kwarg);
+        }
+        for default in params.defaults {
+            self.visit_expr(*default);
+        }
+        for default in params.kw_defaults {
+            if let Some(d) = default {
+                self.visit_expr(*d);
+            }
+        }
     }
 
     fn visit_parameter(&mut self, param: &Parameter<'src>) {
@@ -114,6 +184,10 @@ impl<'src> Indexer<'src> {
     }
 
     fn visit_class_def(&mut self, class: &ClassDef<'src>) {
+        for decorator in class.decorators {
+            self.visit_expr(*decorator);
+        }
+
         let name_range = self.name_range(class.name, class.range);
         let _symbol_id = self.index.add_symbol(
             class.name,
@@ -124,6 +198,10 @@ impl<'src> Indexer<'src> {
         );
 
         self.visit_exprs(class.bases);
+
+        for kw in class.keywords {
+            self.visit_expr(kw.value);
+        }
 
         let inner_scope = self
             .index
@@ -151,6 +229,14 @@ impl<'src> Indexer<'src> {
     fn visit_aug_assign(&mut self, aug: &AugAssignStmt<'src>) {
         self.visit_expr(aug.target);
         self.visit_expr(aug.value);
+    }
+
+    fn visit_ann_assign(&mut self, ann: &AnnAssignStmt<'src>) {
+        self.visit_expr(ann.annotation);
+        if let Some(value) = ann.value {
+            self.visit_expr(value);
+        }
+        self.visit_assign_target(ann.target);
     }
 
     fn visit_assign_target(&mut self, target: Expression<'src>) {
@@ -198,10 +284,77 @@ impl<'src> Indexer<'src> {
         self.visit_stmts(for_stmt.orelse);
     }
 
+    fn visit_async_for(&mut self, for_stmt: &AsyncForStmt<'src>) {
+        self.visit_expr(for_stmt.iter);
+        self.visit_assign_target(for_stmt.target);
+        self.visit_stmts(for_stmt.body);
+        self.visit_stmts(for_stmt.orelse);
+    }
+
     fn visit_while(&mut self, while_stmt: &WhileStmt<'src>) {
         self.visit_expr(while_stmt.test);
         self.visit_stmts(while_stmt.body);
         self.visit_stmts(while_stmt.orelse);
+    }
+
+    fn visit_with(&mut self, with_stmt: &WithStmt<'src>) {
+        for item in with_stmt.items {
+            self.visit_expr(item.context_expr);
+            if let Some(vars) = item.optional_vars {
+                self.visit_assign_target(vars);
+            }
+        }
+        self.visit_stmts(with_stmt.body);
+    }
+
+    fn visit_async_with(&mut self, with_stmt: &AsyncWithStmt<'src>) {
+        for item in with_stmt.items {
+            self.visit_expr(item.context_expr);
+            if let Some(vars) = item.optional_vars {
+                self.visit_assign_target(vars);
+            }
+        }
+        self.visit_stmts(with_stmt.body);
+    }
+
+    fn visit_try(&mut self, try_stmt: &TryStmt<'src>) {
+        self.visit_stmts(try_stmt.body);
+
+        for handler in try_stmt.handlers {
+            if let Some(typ) = handler.typ {
+                self.visit_expr(typ);
+            }
+            if let Some(name) = handler.name {
+                let name_range = handler.range; // approximate
+                self.index.add_symbol(
+                    name,
+                    SymbolKind::Variable,
+                    handler.range,
+                    name_range,
+                    self.current_scope,
+                );
+            }
+            self.visit_stmts(handler.body);
+        }
+
+        self.visit_stmts(try_stmt.orelse);
+        self.visit_stmts(try_stmt.finalbody);
+    }
+
+    fn visit_raise(&mut self, raise: &RaiseStmt<'src>) {
+        if let Some(exc) = raise.exc {
+            self.visit_expr(exc);
+        }
+        if let Some(cause) = raise.cause {
+            self.visit_expr(cause);
+        }
+    }
+
+    fn visit_assert(&mut self, assert: &AssertStmt<'src>) {
+        self.visit_expr(assert.test);
+        if let Some(msg) = assert.msg {
+            self.visit_expr(msg);
+        }
     }
 
     fn visit_import(&mut self, import: &ImportStmt<'src>) {
@@ -216,11 +369,27 @@ impl<'src> Indexer<'src> {
         }
     }
 
+    fn visit_global(&mut self, _global: &GlobalStmt<'src>) {
+        // global declares names exist in global scope
+        // actual binding is handled elsewhere
+    }
+
+    fn visit_nonlocal(&mut self, _nonlocal: &NonlocalStmt<'src>) {
+        // nonlocal declares names exist in enclosing scope
+        // actual binding is handled elsewhere
+    }
+
     fn add_import_symbol(&mut self, alias: &Alias<'src>, kind: SymbolKind) {
         let name = alias.asname.unwrap_or(alias.name);
         let range = self.name_range(name, alias.range);
         self.index
             .add_symbol(name, kind, alias.range, range, self.current_scope);
+    }
+
+    fn visit_delete(&mut self, delete: &DeleteStmt<'src>) {
+        for target in delete.targets {
+            self.visit_expr(*target);
+        }
     }
 
     fn visit_expr_stmt(&mut self, expr_stmt: &ExprStmt<'src>) {
@@ -237,6 +406,11 @@ impl<'src> Indexer<'src> {
             Expression::UnaryOp(unary) => {
                 self.visit_expr(unary.operand);
             }
+            Expression::BoolOp(boolop) => {
+                for value in boolop.values {
+                    self.visit_expr(*value);
+                }
+            }
             Expression::Compare(compare) => {
                 self.visit_expr(compare.left);
                 self.visit_exprs(compare.comparators);
@@ -244,6 +418,9 @@ impl<'src> Indexer<'src> {
             Expression::Call(call) => {
                 self.visit_expr(call.func);
                 self.visit_exprs(call.args);
+                for kw in call.keywords {
+                    self.visit_expr(kw.value);
+                }
             }
             Expression::Attribute(attr) => {
                 self.visit_expr(attr.value);
@@ -263,17 +440,116 @@ impl<'src> Indexer<'src> {
                 }
                 self.visit_exprs(dict.values);
             }
+            Expression::Set(set) => self.visit_exprs(set.elts),
+            Expression::Lambda(lambda) => {
+                let lambda_scope =
+                    self.index
+                        .add_scope(ScopeKind::Lambda, self.current_scope, lambda.range);
+                self.with_scope(lambda_scope, |this| {
+                    this.visit_parameters(lambda.params);
+                    this.visit_expr(lambda.body);
+                });
+            }
+            Expression::IfExp(ifexp) => {
+                self.visit_expr(ifexp.test);
+                self.visit_expr(ifexp.body);
+                self.visit_expr(ifexp.orelse);
+            }
+            Expression::ListComp(comp) => {
+                self.visit_comprehension(comp.elt, comp.generators, comp.range);
+            }
+            Expression::SetComp(comp) => {
+                self.visit_comprehension(comp.elt, comp.generators, comp.range);
+            }
+            Expression::DictComp(comp) => {
+                let comp_scope =
+                    self.index
+                        .add_scope(ScopeKind::Comprehension, self.current_scope, comp.range);
+                self.with_scope(comp_scope, |this| {
+                    for generator in comp.generators {
+                        this.visit_expr(generator.iter);
+                        this.visit_assign_target(generator.target);
+                        for if_clause in generator.ifs {
+                            this.visit_expr(*if_clause);
+                        }
+                    }
+                    this.visit_expr(comp.key);
+                    this.visit_expr(comp.value);
+                });
+            }
+            Expression::GeneratorExp(generator) => {
+                self.visit_comprehension(generator.elt, generator.generators, generator.range);
+            }
+            Expression::Yield(y) => {
+                if let Some(value) = y.value {
+                    self.visit_expr(value);
+                }
+            }
+            Expression::YieldFrom(y) => {
+                self.visit_expr(y.value);
+            }
+            Expression::Await(a) => {
+                self.visit_expr(a.value);
+            }
+            Expression::Starred(s) => {
+                self.visit_expr(s.value);
+            }
+            Expression::Named(n) => {
+                self.visit_expr(n.value);
+                self.visit_assign_target(n.target);
+            }
+            Expression::Slice(s) => {
+                if let Some(lower) = s.lower {
+                    self.visit_expr(lower);
+                }
+                if let Some(upper) = s.upper {
+                    self.visit_expr(upper);
+                }
+                if let Some(step) = s.step {
+                    self.visit_expr(step);
+                }
+            }
+            Expression::FString(f) => {
+                for part in f.values {
+                    if let FStringPart::FormattedValue(fv) = part {
+                        self.visit_expr(fv.value);
+                    }
+                }
+            }
             Expression::Int(_)
             | Expression::Float(_)
             | Expression::String(_)
+            | Expression::Bytes(_)
             | Expression::Bool(_)
-            | Expression::None(_) => {}
+            | Expression::None(_)
+            | Expression::Ellipsis(_) => {}
         }
     }
 
     fn visit_name(&mut self, name: &NameExpr<'src>) {
         let resolved = self.index.resolve_name(name.id, self.current_scope);
         self.index.add_reference(name.id, name.range, resolved);
+    }
+
+    fn visit_comprehension(
+        &mut self,
+        elt: Expression<'src>,
+        generators: &[Comprehension<'src>],
+        range: TextRange,
+    ) {
+        let comp_scope = self
+            .index
+            .add_scope(ScopeKind::Comprehension, self.current_scope, range);
+        self.with_scope(comp_scope, |this| {
+            for generator in generators {
+                this.visit_expr(generator.iter);
+                this.visit_assign_target(generator.target);
+                for if_clause in generator.ifs {
+                    this.visit_expr(*if_clause);
+                }
+            }
+            this.visit_expr(elt);
+        });
     }
 
     fn is_in_class_scope(&self) -> bool {

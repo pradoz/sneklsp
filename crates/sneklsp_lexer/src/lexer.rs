@@ -73,7 +73,13 @@ impl<'src> Lexer<'src> {
             b']' => TokenKind::RBracket,
             b'{' => TokenKind::LBrace,
             b'}' => TokenKind::RBrace,
-            b':' => TokenKind::Colon,
+            b':' => {
+                if self.match_byte(b'=') {
+                    TokenKind::ColonEq
+                } else {
+                    TokenKind::Colon
+                }
+            }
             b',' => TokenKind::Comma,
             b';' => TokenKind::Semi,
             b'@' => TokenKind::At,
@@ -82,6 +88,10 @@ impl<'src> Lexer<'src> {
             b'.' => {
                 if self.peek().is_ascii_digit() {
                     self.scan_number(start)
+                } else if self.peek() == b'.' && self.peek_next() == b'.' {
+                    self.advance(); // second .
+                    self.advance(); // third .
+                    TokenKind::Ellipsis
                 } else {
                     TokenKind::Dot
                 }

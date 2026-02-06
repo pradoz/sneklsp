@@ -7,10 +7,14 @@ pub enum Expression<'ast> {
     Int(&'ast IntExpr),
     Float(&'ast FloatExpr),
     String(&'ast StringExpr<'ast>),
+    FString(&'ast FStringExpr<'ast>),
+    Bytes(&'ast BytesExpr<'ast>),
     Bool(&'ast BoolExpr),
     None(&'ast NoneExpr),
+    Ellipsis(&'ast EllipsisExpr),
     BinOp(&'ast BinOpExpr<'ast>),
     UnaryOp(&'ast UnaryOpExpr<'ast>),
+    BoolOp(&'ast BoolOpExpr<'ast>),
     Compare(&'ast CompareExpr<'ast>),
     Call(&'ast CallExpr<'ast>),
     Attribute(&'ast AttributeExpr<'ast>),
@@ -18,6 +22,19 @@ pub enum Expression<'ast> {
     List(&'ast ListExpr<'ast>),
     Tuple(&'ast TupleExpr<'ast>),
     Dict(&'ast DictExpr<'ast>),
+    Set(&'ast SetExpr<'ast>),
+    Lambda(&'ast LambdaExpr<'ast>),
+    IfExp(&'ast IfExpr<'ast>),
+    ListComp(&'ast ListCompExpr<'ast>),
+    SetComp(&'ast SetCompExpr<'ast>),
+    DictComp(&'ast DictCompExpr<'ast>),
+    GeneratorExp(&'ast GeneratorExpr<'ast>),
+    Yield(&'ast YieldExpr<'ast>),
+    YieldFrom(&'ast YieldFromExpr<'ast>),
+    Await(&'ast AwaitExpr<'ast>),
+    Starred(&'ast StarredExpr<'ast>),
+    Named(&'ast NamedExpr<'ast>),
+    Slice(&'ast SliceExpr<'ast>),
 }
 
 impl<'ast> Expression<'ast> {
@@ -27,10 +44,14 @@ impl<'ast> Expression<'ast> {
             Expression::Int(e) => e.range,
             Expression::Float(e) => e.range,
             Expression::String(e) => e.range,
+            Expression::FString(e) => e.range,
+            Expression::Bytes(e) => e.range,
             Expression::Bool(e) => e.range,
             Expression::None(e) => e.range,
+            Expression::Ellipsis(e) => e.range,
             Expression::BinOp(e) => e.range,
             Expression::UnaryOp(e) => e.range,
+            Expression::BoolOp(e) => e.range,
             Expression::Compare(e) => e.range,
             Expression::Call(e) => e.range,
             Expression::Attribute(e) => e.range,
@@ -38,6 +59,19 @@ impl<'ast> Expression<'ast> {
             Expression::List(e) => e.range,
             Expression::Tuple(e) => e.range,
             Expression::Dict(e) => e.range,
+            Expression::Set(e) => e.range,
+            Expression::Lambda(e) => e.range,
+            Expression::IfExp(e) => e.range,
+            Expression::ListComp(e) => e.range,
+            Expression::SetComp(e) => e.range,
+            Expression::DictComp(e) => e.range,
+            Expression::GeneratorExp(e) => e.range,
+            Expression::Yield(e) => e.range,
+            Expression::YieldFrom(e) => e.range,
+            Expression::Await(e) => e.range,
+            Expression::Starred(e) => e.range,
+            Expression::Named(e) => e.range,
+            Expression::Slice(e) => e.range,
         }
     }
 }
@@ -67,6 +101,32 @@ pub struct StringExpr<'ast> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FStringExpr<'ast> {
+    pub values: &'ast [FStringPart<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FStringPart<'ast> {
+    Literal(&'ast str),
+    FormattedValue(&'ast FormattedValue<'ast>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FormattedValue<'ast> {
+    pub value: Expression<'ast>,
+    pub conversion: Option<char>,
+    pub format_spec: Option<&'ast [FStringPart<'ast>]>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BytesExpr<'ast> {
+    pub value: &'ast [u8],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoolExpr {
     pub value: bool,
     pub range: TextRange,
@@ -74,6 +134,11 @@ pub struct BoolExpr {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NoneExpr {
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EllipsisExpr {
     pub range: TextRange,
 }
 
@@ -117,6 +182,19 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoolOpExpr<'ast> {
+    pub op: BoolOp,
+    pub values: &'ast [Expression<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoolOp {
+    And,
+    Or,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompareExpr<'ast> {
     pub left: Expression<'ast>,
     pub op: &'ast [CompareOp],
@@ -142,6 +220,7 @@ pub enum CompareOp {
 pub struct CallExpr<'ast> {
     pub func: Expression<'ast>,
     pub args: &'ast [Expression<'ast>],
+    pub keywords: &'ast [crate::Keyword<'ast>],
     pub range: TextRange,
 }
 
@@ -175,5 +254,103 @@ pub struct TupleExpr<'ast> {
 pub struct DictExpr<'ast> {
     pub keys: &'ast [Option<Expression<'ast>>],
     pub values: &'ast [Expression<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SetExpr<'ast> {
+    pub elts: &'ast [Expression<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LambdaExpr<'ast> {
+    pub params: &'ast crate::Parameters<'ast>,
+    pub body: Expression<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IfExpr<'ast> {
+    pub test: Expression<'ast>,
+    pub body: Expression<'ast>,
+    pub orelse: Expression<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Comprehension<'ast> {
+    pub target: Expression<'ast>,
+    pub iter: Expression<'ast>,
+    pub ifs: &'ast [Expression<'ast>],
+    pub is_async: bool,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ListCompExpr<'ast> {
+    pub elt: Expression<'ast>,
+    pub generators: &'ast [Comprehension<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SetCompExpr<'ast> {
+    pub elt: Expression<'ast>,
+    pub generators: &'ast [Comprehension<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DictCompExpr<'ast> {
+    pub key: Expression<'ast>,
+    pub value: Expression<'ast>,
+    pub generators: &'ast [Comprehension<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GeneratorExpr<'ast> {
+    pub elt: Expression<'ast>,
+    pub generators: &'ast [Comprehension<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct YieldExpr<'ast> {
+    pub value: Option<Expression<'ast>>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct YieldFromExpr<'ast> {
+    pub value: Expression<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AwaitExpr<'ast> {
+    pub value: Expression<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StarredExpr<'ast> {
+    pub value: Expression<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NamedExpr<'ast> {
+    pub target: Expression<'ast>,
+    pub value: Expression<'ast>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SliceExpr<'ast> {
+    pub lower: Option<Expression<'ast>>,
+    pub upper: Option<Expression<'ast>>,
+    pub step: Option<Expression<'ast>>,
     pub range: TextRange,
 }
