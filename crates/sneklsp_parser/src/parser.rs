@@ -246,7 +246,6 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 | TokenKind::Pass
                 | TokenKind::Break
                 | TokenKind::Continue
-                | TokenKind::Dedent
                 | TokenKind::At
         )
     }
