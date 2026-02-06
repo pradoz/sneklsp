@@ -9,8 +9,8 @@ use lsp_types::notification::{
     PublishDiagnostics,
 };
 use lsp_types::request::{
-    DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, References, Rename,
-    Request as _,
+    Completion, DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, References,
+    Rename, Request as _,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
@@ -47,6 +47,10 @@ pub fn run_server() -> Result<()> {
                 save: Some(SaveOptions::default().into()),
             },
         )),
+        completion_provider: Some(lsp_types::CompletionOptions {
+            trigger_characters: Some(vec![".".to_string()]),
+            ..Default::default()
+        }),
         document_symbol_provider: Some(OneOf::Left(true)),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
@@ -259,6 +263,12 @@ impl Server {
         tracing::debug!(?req.method, "handling request");
 
         match req.method.as_str() {
+            Completion::METHOD => {
+                let (id, params) = cast_request::<Completion>(req)?;
+                let result = handlers::handle_completion(params, &self.documents);
+                self.send_response(id, result);
+            }
+
             DocumentSymbolRequest::METHOD => {
                 let (id, params) = cast_request::<DocumentSymbolRequest>(req)?;
                 let result = handlers::handle_document_symbol(params, &self.documents);

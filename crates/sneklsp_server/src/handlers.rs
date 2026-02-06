@@ -1,10 +1,12 @@
 use lsp_types::{
-    DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Location, Position, Range, ReferenceParams, RenameParams, SymbolKind,
-    TextEdit, Uri, WorkspaceEdit,
+    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentSymbol,
+    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
+    Location, Position, Range, ReferenceParams, RenameParams, SymbolKind, TextEdit, Uri,
+    WorkspaceEdit,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use crate::builtins::BUILTINS;
 use crate::server::DocumentState;
 use sneklsp_index::{OwnedIndex, SymbolData};
 use sneklsp_text::{LineIndex, TextRange, TextSize};
@@ -46,6 +48,21 @@ pub fn to_lsp_symbol_kind(kind: sneklsp_index::SymbolKind) -> SymbolKind {
         sneklsp_index::SymbolKind::Method => SymbolKind::METHOD,
         sneklsp_index::SymbolKind::Property => SymbolKind::PROPERTY,
         sneklsp_index::SymbolKind::TypeAlias => SymbolKind::TYPE_PARAMETER,
+    }
+}
+
+#[inline]
+pub fn to_lsp_completion_kind(kind: sneklsp_index::SymbolKind) -> CompletionItemKind {
+    match kind {
+        sneklsp_index::SymbolKind::Function => CompletionItemKind::FUNCTION,
+        sneklsp_index::SymbolKind::Class => CompletionItemKind::CLASS,
+        sneklsp_index::SymbolKind::Variable => CompletionItemKind::VARIABLE,
+        sneklsp_index::SymbolKind::Parameter => CompletionItemKind::VARIABLE,
+        sneklsp_index::SymbolKind::Import => CompletionItemKind::MODULE,
+        sneklsp_index::SymbolKind::ImportedSymbol => CompletionItemKind::REFERENCE,
+        sneklsp_index::SymbolKind::Method => CompletionItemKind::METHOD,
+        sneklsp_index::SymbolKind::Property => CompletionItemKind::PROPERTY,
+        sneklsp_index::SymbolKind::TypeAlias => CompletionItemKind::TYPE_PARAMETER,
     }
 }
 
@@ -312,5 +329,119 @@ pub fn handle_document_highlight(
         None
     } else {
         Some(highlights)
+    }
+}
+
+pub fn handle_completion(
+    params: CompletionParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<CompletionResponse> {
+    let uri = params.text_document_position.text_document.uri;
+    let pos = params.text_document_position.position;
+
+    let query = get_document_query(&uri, documents)?;
+    let offset = from_lsp_position(pos, query.line_index)?;
+
+    let mut items = Vec::new();
+    let mut seen = HashSet::new();
+
+    // collect all visible symbols as cursor
+    let scope_id = find_scope_at(query.index, offset);
+    collect_visible_symbols(query.index, scope_id, &mut seen, &mut items);
+
+    add_builtin_completions(&mut seen, &mut items);
+
+    if items.is_empty() {
+        None
+    } else {
+        Some(CompletionResponse::Array(items))
+    }
+}
+
+fn find_scope_at(index: &OwnedIndex, offset: TextSize) -> Option<u32> {
+    let mut best: Option<(u32, u32)> = None; // (scope_id, range_len)
+
+    for scope in index.scopes() {
+        if scope.range.contains(offset) {
+            let len = scope.range.len().to_u32();
+            match best {
+                Some((_, best_len)) if len < best_len => {
+                    best = Some((scope.id, len));
+                }
+                None => {
+                    best = Some((scope.id, len));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    best.map(|(id, _)| id)
+}
+
+fn collect_visible_symbols(
+    index: &OwnedIndex,
+    scope_id: Option<u32>,
+    seen: &mut std::collections::HashSet<String>,
+    items: &mut Vec<CompletionItem>,
+) {
+    let mut current = scope_id;
+
+    while let Some(sid) = current {
+        if let Some(scope) = index.scope(sid) {
+            // skip class scopes for name lookup
+            let skip = scope.kind == sneklsp_index::ScopeKind::Class && scope_id != Some(sid);
+
+            if !skip {
+                for &sym_id in &scope.symbols {
+                    if let Some(symbol) = index.symbol(sym_id) {
+                        let name = index.symbol_name(symbol).to_string();
+
+                        if seen.insert(name.clone()) {
+                            items.push(CompletionItem {
+                                label: name,
+                                kind: Some(to_lsp_completion_kind(symbol.kind)),
+                                detail: symbol_detail(symbol),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+            }
+
+            current = scope.parent;
+        } else {
+            break;
+        }
+    }
+}
+
+fn symbol_detail(symbol: &SymbolData) -> Option<String> {
+    match symbol.kind {
+        sneklsp_index::SymbolKind::Function | sneklsp_index::SymbolKind::Method => {
+            Some("function".to_string())
+        }
+        sneklsp_index::SymbolKind::Class => Some("class".to_string()),
+        sneklsp_index::SymbolKind::Parameter => Some("parameter".to_string()),
+        sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol => {
+            Some("import".to_string())
+        }
+        _ => None,
+    }
+}
+
+fn add_builtin_completions(
+    seen: &mut std::collections::HashSet<String>,
+    items: &mut Vec<CompletionItem>,
+) {
+    for builtin in BUILTINS {
+        if seen.insert((*builtin.name).to_string()) {
+            items.push(CompletionItem {
+                label: builtin.name.to_string(),
+                kind: Some(builtin.kind),
+                detail: Some(builtin.detail.to_string()),
+                ..Default::default()
+            });
+        }
     }
 }

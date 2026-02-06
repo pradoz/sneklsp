@@ -1,4 +1,5 @@
 mod background;
+mod builtins;
 mod debouncer;
 mod diagnostics;
 mod document;
