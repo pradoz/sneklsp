@@ -48,19 +48,33 @@ impl<'src> Indexer<'src> {
 
     fn visit_stmt(&mut self, stmt: Statement<'src>) {
         match stmt {
-            Statement::FunctionDef(f) => self.visit_function_def(f),
-            Statement::AsyncFunctionDef(f) => self.visit_async_function_def(f),
+            Statement::FunctionDef(f) => self.visit_function_common(
+                f.name,
+                f.params,
+                f.body,
+                f.decorators,
+                f.returns,
+                f.range,
+            ),
+            Statement::AsyncFunctionDef(f) => self.visit_function_common(
+                f.name,
+                f.params,
+                f.body,
+                f.decorators,
+                f.returns,
+                f.range,
+            ),
             Statement::ClassDef(c) => self.visit_class_def(c),
             Statement::Return(r) => self.visit_return(r),
             Statement::Assign(a) => self.visit_assign(a),
             Statement::AugAssign(a) => self.visit_aug_assign(a),
             Statement::AnnAssign(a) => self.visit_ann_assign(a),
             Statement::If(i) => self.visit_if(i),
-            Statement::For(f) => self.visit_for(f),
-            Statement::AsyncFor(f) => self.visit_async_for(f),
+            Statement::For(f) => self.visit_for_common(f.target, f.iter, f.body, f.orelse),
+            Statement::AsyncFor(f) => self.visit_for_common(f.target, f.iter, f.body, f.orelse),
             Statement::While(w) => self.visit_while(w),
-            Statement::With(w) => self.visit_with(w),
-            Statement::AsyncWith(w) => self.visit_async_with(w),
+            Statement::With(w) => self.visit_with_common(w.items, w.body),
+            Statement::AsyncWith(w) => self.visit_with_common(w.items, w.body),
             Statement::Try(t) => self.visit_try(t),
             Statement::Raise(r) => self.visit_raise(r),
             Statement::Assert(a) => self.visit_assert(a),
@@ -85,8 +99,16 @@ impl<'src> Indexer<'src> {
         result
     }
 
-    fn visit_function_def(&mut self, func: &FunctionDef<'src>) {
-        for decorator in func.decorators {
+    fn visit_function_common(
+        &mut self,
+        name: Identifier<'src>,
+        params: &Parameters<'src>,
+        body: &[Statement<'src>],
+        decorators: &[Expression<'src>],
+        returns: Option<Expression<'src>>,
+        range: TextRange,
+    ) {
+        for decorator in decorators {
             self.visit_expr(*decorator);
         }
 
@@ -96,11 +118,11 @@ impl<'src> Indexer<'src> {
             SymbolKind::Function
         };
 
-        let name_range = self.name_range(func.name, func.range);
-        let docstring = self.extract_docstring(func.body);
-        let symbol_id =
-            self.index
-                .add_symbol(func.name, kind, func.range, name_range, self.current_scope);
+        let name_range = self.name_range(name, range);
+        let docstring = self.extract_docstring(body);
+        let symbol_id = self
+            .index
+            .add_symbol(name, kind, range, name_range, self.current_scope);
 
         if let Some(doc) = docstring {
             self.index.set_symbol_docstring(symbol_id, doc);
@@ -108,52 +130,16 @@ impl<'src> Indexer<'src> {
 
         let func_scope = self
             .index
-            .add_scope(ScopeKind::Function, self.current_scope, func.range);
+            .add_scope(ScopeKind::Function, self.current_scope, range);
 
         self.with_scope(func_scope, |this| {
-            this.visit_parameters(func.params);
+            this.visit_parameters(params);
 
-            if let Some(returns) = func.returns {
+            if let Some(returns) = returns {
                 this.visit_expr(returns);
             }
 
-            this.visit_stmts(func.body);
-        });
-    }
-
-    fn visit_async_function_def(&mut self, func: &AsyncFunctionDef<'src>) {
-        for decorator in func.decorators {
-            self.visit_expr(*decorator);
-        }
-
-        let kind = if self.is_in_class_scope() {
-            SymbolKind::Method
-        } else {
-            SymbolKind::Function
-        };
-
-        let name_range = self.name_range(func.name, func.range);
-        let docstring = self.extract_docstring(func.body);
-        let symbol_id =
-            self.index
-                .add_symbol(func.name, kind, func.range, name_range, self.current_scope);
-
-        if let Some(doc) = docstring {
-            self.index.set_symbol_docstring(symbol_id, doc);
-        }
-
-        let func_scope = self
-            .index
-            .add_scope(ScopeKind::Function, self.current_scope, func.range);
-
-        self.with_scope(func_scope, |this| {
-            this.visit_parameters(func.params);
-
-            if let Some(returns) = func.returns {
-                this.visit_expr(returns);
-            }
-
-            this.visit_stmts(func.body);
+            this.visit_stmts(body);
         });
     }
 
@@ -302,18 +288,17 @@ impl<'src> Indexer<'src> {
         self.visit_stmts(if_stmt.orelse);
     }
 
-    fn visit_for(&mut self, for_stmt: &ForStmt<'src>) {
-        self.visit_expr(for_stmt.iter);
-        self.visit_assign_target(for_stmt.target);
-        self.visit_stmts(for_stmt.body);
-        self.visit_stmts(for_stmt.orelse);
-    }
-
-    fn visit_async_for(&mut self, for_stmt: &AsyncForStmt<'src>) {
-        self.visit_expr(for_stmt.iter);
-        self.visit_assign_target(for_stmt.target);
-        self.visit_stmts(for_stmt.body);
-        self.visit_stmts(for_stmt.orelse);
+    fn visit_for_common(
+        &mut self,
+        target: Expression<'src>,
+        iter: Expression<'src>,
+        body: &[Statement<'src>],
+        orelse: &[Statement<'src>],
+    ) {
+        self.visit_expr(iter);
+        self.visit_assign_target(target);
+        self.visit_stmts(body);
+        self.visit_stmts(orelse);
     }
 
     fn visit_while(&mut self, while_stmt: &WhileStmt<'src>) {
@@ -322,24 +307,14 @@ impl<'src> Indexer<'src> {
         self.visit_stmts(while_stmt.orelse);
     }
 
-    fn visit_with(&mut self, with_stmt: &WithStmt<'src>) {
-        for item in with_stmt.items {
+    fn visit_with_common(&mut self, items: &[WithItem<'src>], body: &[Statement<'src>]) {
+        for item in items {
             self.visit_expr(item.context_expr);
             if let Some(vars) = item.optional_vars {
                 self.visit_assign_target(vars);
             }
         }
-        self.visit_stmts(with_stmt.body);
-    }
-
-    fn visit_async_with(&mut self, with_stmt: &AsyncWithStmt<'src>) {
-        for item in with_stmt.items {
-            self.visit_expr(item.context_expr);
-            if let Some(vars) = item.optional_vars {
-                self.visit_assign_target(vars);
-            }
-        }
-        self.visit_stmts(with_stmt.body);
+        self.visit_stmts(body);
     }
 
     fn visit_try(&mut self, try_stmt: &TryStmt<'src>) {
