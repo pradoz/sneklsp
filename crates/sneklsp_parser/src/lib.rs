@@ -1,16 +1,16 @@
 mod parser;
 
 use sneklsp_ast::{AstArena, Module};
-use sneklsp_text::TextSize;
+use sneklsp_text::{TextRange, TextSize};
 use thiserror::Error;
 
 pub use parser::Parser;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("unexpected token at offset {offset}: expected {expected}, found {found}")]
+    #[error("unexpected token at offset {range:?}: expected {expected}, found {found}")]
     UnexpectedToken {
-        offset: TextSize,
+        range: TextRange,
         expected: String,
         found: String,
     },
@@ -24,17 +24,29 @@ pub enum ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
+pub struct ParseOutput<'ast> {
+    pub module: Module<'ast>,
+    pub errors: Vec<ParseError>,
+}
+
 #[inline]
 pub fn parse<'ast>(source: &str, arena: &'ast AstArena) -> ParseResult<Module<'ast>> {
     Parser::new(source, arena).parse_module()
+}
+
+#[inline]
+pub fn parse_recovering<'ast>(source: &str, arena: &'ast AstArena) -> ParseOutput<'ast> {
+    let mut parser = Parser::new(source, arena).with_recovery();
+    let module = parser.parse_module_recovering();
+    let errors = parser.take_errors();
+    ParseOutput { module, errors }
 }
 
 pub fn parse_and_collect_errors(source: &str) -> Vec<ParseError> {
     // estimate ~50 bytes of arena per byte of source for python
     let arena_size = source.len() * 50;
     let arena = AstArena::with_capacity(arena_size.max(4096));
-    let mut parser = Parser::new(source, &arena);
-    parser.parse_module_collecting_errors()
+    parse_recovering(source, &arena).errors
 }
 
 #[cfg(test)]
@@ -91,6 +103,28 @@ mod tests {
                 "expected multiple errors, got {}",
                 errors.len()
             );
+        }
+    }
+
+    mod recovery {
+        use super::*;
+
+        #[test]
+        fn valid_source_no_errors() {
+            let arena = AstArena::new();
+            let source = "x = 1\ny = 2";
+            let output = parse_recovering(source, &arena);
+            assert_eq!(output.module.body.len(), 2);
+            assert!(output.errors.is_empty());
+        }
+
+        #[test]
+        fn recovers_partial_module() {
+            let arena = AstArena::new();
+            let source = "x = 1\ndef foo(\nz = 3";
+            let output = parse_recovering(source, &arena);
+            assert!(output.module.body.len() >= 2);
+            assert!(!output.errors.is_empty());
         }
     }
 

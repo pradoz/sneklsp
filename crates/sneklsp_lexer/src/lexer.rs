@@ -303,15 +303,19 @@ impl<'src> Lexer<'src> {
 
         let text = &self.source[start..self.position];
 
-        // TODO: decide if we should parse expressions inside `{...}`
         if self.peek() == b'"' || self.peek() == b'\'' {
             let lower = text.to_lowercase();
             if matches!(
                 lower.as_str(),
                 "f" | "r" | "b" | "fr" | "rf" | "br" | "rb" | "u"
             ) {
+                let is_fstring = matches!(lower.as_str(), "f" | "fr" | "rf");
                 let quote = self.advance();
-                return self.scan_string(quote);
+                let string_kind = self.scan_string(quote);
+                if string_kind == TokenKind::String && is_fstring {
+                    return TokenKind::FString;
+                }
+                return string_kind;
             }
         }
 
@@ -527,6 +531,14 @@ mod tests {
         assert_eq!(lex("\"hello\""), vec![TokenKind::String]);
         assert_eq!(lex("'hello'"), vec![TokenKind::String]);
         assert_eq!(lex("\"\"\"hello\"\"\""), vec![TokenKind::String]);
+    }
+
+    #[test]
+    fn fstring_token() {
+        assert_eq!(lex("f'hello {x}'"), vec![TokenKind::FString]);
+        assert_eq!(lex("f\"hello\""), vec![TokenKind::FString]);
+        assert_eq!(lex("rf'raw {x}'"), vec![TokenKind::FString]);
+        assert_eq!(lex("fr'raw {x}'"), vec![TokenKind::FString]);
     }
 
     #[test]

@@ -101,24 +101,13 @@ fn zero_width_range(line: u32, character: u32) -> Range {
 fn to_parse_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic {
     let (range, message) = match error {
         ParseError::UnexpectedToken {
-            offset,
+            range,
             expected,
             found,
-        } => {
-            let pos = line_index.position(*offset);
-            let start = Position {
-                line: pos.line,
-                character: pos.column,
-            };
-            let end = Position {
-                line: pos.line,
-                character: pos.column + 1,
-            };
-            (
-                Range { start, end },
-                format!("expected {expected}, found {found}"),
-            )
-        }
+        } => (
+            to_lsp_range(*range, line_index),
+            format!("expected {expected}, found {found}"),
+        ),
 
         ParseError::UnexpectedEof => {
             let line = line_index.line_count().saturating_sub(1) as u32;

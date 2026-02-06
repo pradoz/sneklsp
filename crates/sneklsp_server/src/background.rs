@@ -144,23 +144,21 @@ impl BackgroundParser {
 
             let arena_size = (request.content.len() * 50).max(4096);
             let arena = AstArena::with_capacity(arena_size);
-            let (errors, index) = match sneklsp_parser::parse(&request.content, &arena) {
-                Ok(module) => {
-                    let idx = sneklsp_index::index_module(&request.content, &module);
-                    let owned_index = OwnedIndex::new(request.content.clone(), &idx);
-                    (Vec::new(), Some(owned_index))
-                }
-                Err(_) => {
-                    let errors = sneklsp_parser::parse_and_collect_errors(&request.content);
-                    (errors, None)
-                }
+
+            let output = sneklsp_parser::parse_recovering(&request.content, &arena);
+
+            let index = if output.errors.is_empty() || !output.module.body.is_empty() {
+                let idx = sneklsp_index::index_module(&request.content, &output.module);
+                Some(OwnedIndex::new(request.content.clone(), &idx))
+            } else {
+                None
             };
 
             let elapsed = start.elapsed();
             tracing::debug!(
                 request_id = request.request_id,
                 ?elapsed,
-                error_count = errors.len(),
+                error_count = output.errors.len(),
                 token_count = tokens.len(),
                 "parsing complete"
             );
@@ -168,7 +166,7 @@ impl BackgroundParser {
             let result = ParseResult {
                 uri: request.uri,
                 version: request.version,
-                errors,
+                errors: output.errors,
                 line_index,
                 request_id: request.request_id,
                 index,

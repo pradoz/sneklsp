@@ -9,6 +9,7 @@ pub enum TokenKind {
     Int,
     Float,
     String,
+    FString,
 
     // keywords
     And,

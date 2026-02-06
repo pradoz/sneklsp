@@ -69,6 +69,15 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
     }
 
+    pub fn with_recovery(mut self) -> Self {
+        self.mode = ParseMode::Recovering;
+        self
+    }
+
+    pub fn take_errors(&mut self) -> Vec<ParseError> {
+        std::mem::take(&mut self.errors)
+    }
+
     #[inline]
     fn empty_slice<T>(&self) -> &'ast [T] {
         self.arena.alloc_slice(std::iter::empty::<T>())
@@ -138,7 +147,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     #[inline]
     fn err(&self, expected: &str) -> ParseError {
         ParseError::UnexpectedToken {
-            offset: self.current.range.start(),
+            range: self.current.range,
             expected: expected.to_string(),
             found: format!("{:?}", self.current.kind),
         }
@@ -219,10 +228,21 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         })
     }
 
-    pub fn parse_module_collecting_errors(&mut self) -> Vec<ParseError> {
+    pub fn parse_module_recovering(&mut self) -> Module<'ast> {
         self.mode = ParseMode::Recovering;
-        let _ = self.parse_module();
-        std::mem::take(&mut self.errors)
+        match self.parse_module() {
+            Ok(module) => module,
+            Err(e) => {
+                self.errors.push(e);
+                Module {
+                    body: self.empty_slice(),
+                    range: TextRange::new(
+                        TextSize::new(0),
+                        TextSize::new(self.source.len() as u32),
+                    ),
+                }
+            }
+        }
     }
 
     fn synchronize(&mut self) {
@@ -290,6 +310,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     | TokenKind::Int
                     | TokenKind::Float
                     | TokenKind::String
+                    | TokenKind::FString
                     | TokenKind::LParen
                     | TokenKind::LBracket
                     | TokenKind::LBrace
@@ -1215,9 +1236,9 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             TokenKind::Star => {
                 let s = self.start();
                 self.advance();
-                let v = self.parse_expr()?;
+                let value = self.parse_expr()?;
                 Ok(Expression::Starred(self.arena.alloc(StarredExpr {
-                    value: v,
+                    value,
                     range: self.range(s),
                 })))
             }
@@ -1228,25 +1249,33 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 ))
             }
             TokenKind::Int => {
-                let v = self.token_text().parse().unwrap_or(0);
+                let value = self.token_text().parse().unwrap_or(0);
                 self.advance();
-                Ok(Expression::Int(
-                    self.arena.alloc(IntExpr { value: v, range }),
-                ))
+                Ok(Expression::Int(self.arena.alloc(IntExpr { value, range })))
             }
             TokenKind::Float => {
-                let v = self.token_text().parse().unwrap_or(0.0);
+                let value = self.token_text().parse().unwrap_or(0.0);
                 self.advance();
                 Ok(Expression::Float(
-                    self.arena.alloc(FloatExpr { value: v, range }),
+                    self.arena.alloc(FloatExpr { value, range }),
                 ))
             }
             TokenKind::String => {
                 let t = self.token_text();
-                let v = self.arena.alloc_str(&t[1..t.len() - 1]);
+                let value = self.arena.alloc_str(strip_string_quotes(t));
                 self.advance();
                 Ok(Expression::String(
-                    self.arena.alloc(StringExpr { value: v, range }),
+                    self.arena.alloc(StringExpr { value, range }),
+                ))
+            }
+            TokenKind::FString => {
+                let t = self.token_text();
+                let inner = strip_string_quotes(t);
+                let literal_part = FStringPart::Literal(self.arena.alloc_str(inner));
+                let values = self.arena.alloc_slice([literal_part]);
+                self.advance();
+                Ok(Expression::FString(
+                    self.arena.alloc(FStringExpr { values, range }),
                 ))
             }
             TokenKind::True => {
@@ -1670,6 +1699,61 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 }
 
+fn strip_string_quotes(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+
+    // skip prefix characters
+    let mut start = 0;
+    while start < len
+        && matches!(
+            bytes[start],
+            b'r' | b'R' | b'b' | b'B' | b'f' | b'F' | b'u' | b'U'
+        )
+    {
+        start += 1;
+        // max 2 prefix chars (rb, fr)
+        if start >= 2 {
+            break;
+        }
+    }
+
+    if start >= len {
+        return "";
+    }
+
+    let quote = bytes[start];
+    if quote != b'\'' && quote != b'"' {
+        return &text[start..];
+    }
+
+    // handle triple quote
+    let triple = start + 2 < len && bytes[start + 1] == quote && bytes[start + 2] == quote;
+
+    let quote_len = if triple { 3 } else { 1 };
+    let content_start = start + quote_len;
+
+    // strip trailing quotes
+    let mut content_end = len;
+    if triple {
+        if content_end >= 3
+            && bytes[content_end - 1] == quote
+            && bytes[content_end - 2] == quote
+            && bytes[content_end - 3] == quote
+            && content_end - 3 >= content_start
+        {
+            content_end -= 3;
+        }
+    } else if content_end >= 1
+        && bytes[content_end - 1] == quote
+        && content_end - 1 >= content_start
+    {
+        content_end -= 1;
+    }
+
+    &text[content_start..content_end]
+}
+
 trait HasRange {
     fn new(range: TextRange) -> Self;
 }
@@ -1786,5 +1870,63 @@ mod tests {
             panic!("expected Assign statement");
         };
         assert_eq!(assign.targets.len(), 2);
+    }
+
+    mod strings {
+        use super::*;
+
+        #[test]
+        fn empty() {
+            let arena = AstArena::new();
+            let module = Parser::new("''", &arena).parse_module().unwrap();
+            let Statement::Expr(e) = module.body[0] else {
+                panic!("expected Expr statement");
+            };
+            let Expression::String(s) = e.value else {
+                panic!("expected String expression");
+            };
+            assert_eq!(s.value, "");
+        }
+
+        #[test]
+        fn string_prefixes() {
+            let arena = AstArena::new();
+            let module = Parser::new("r'hello'", &arena).parse_module().unwrap();
+            let Statement::Expr(e) = module.body[0] else {
+                panic!("expected Expr statement");
+            };
+            let Expression::String(s) = e.value else {
+                panic!("expected String expression");
+            };
+            assert_eq!(s.value, "hello");
+        }
+
+        #[test]
+        fn triple_quoted() {
+            let arena = AstArena::new();
+            let module = Parser::new("\"\"\"hello\nworld\"\"\"", &arena)
+                .parse_module()
+                .unwrap();
+            let Statement::Expr(e) = module.body[0] else {
+                panic!("expected Expr statement");
+            };
+            let Expression::String(s) = e.value else {
+                panic!("expected String expression");
+            };
+            assert_eq!(s.value, "hello\nworld");
+        }
+
+        #[test]
+        fn byte() {
+            let arena = AstArena::new();
+            let module = Parser::new("b'data'", &arena).parse_module().unwrap();
+            let Statement::Expr(e) = module.body[0] else {
+                panic!("expected Expr statement");
+            };
+            let Expression::String(s) = e.value else {
+                panic!("expected String expression");
+            };
+            assert_eq!(s.value, "data");
+        }
     }
 }
