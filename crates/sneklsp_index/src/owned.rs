@@ -163,6 +163,24 @@ impl OwnedIndex {
         self.symbols.iter().find(|s| s.id == id)
     }
 
+    pub fn scope_at(&self, offset: sneklsp_text::TextSize) -> Option<&ScopeData> {
+        let mut best: Option<&ScopeData> = None;
+
+        for scope in &self.scopes {
+            if scope.range.contains(offset) {
+                match best {
+                    Some(b) if scope.range.len().to_u32() < b.range.len().to_u32() => {
+                        best = Some(scope);
+                    }
+                    None => best = Some(scope),
+                    _ => {}
+                }
+            }
+        }
+
+        best
+    }
+
     #[inline]
     pub fn scope(&self, id: u32) -> Option<&ScopeData> {
         self.scopes.iter().find(|s| s.id == id)

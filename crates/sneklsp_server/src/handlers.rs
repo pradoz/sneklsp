@@ -433,7 +433,8 @@ pub fn handle_completion(
     let mut seen = HashSet::new();
 
     // collect all visible symbols as cursor
-    let scope_id = find_scope_at(query.index, offset);
+    let scope = query.index.scope_at(offset);
+    let scope_id = scope.map(|s| s.id);
     collect_visible_symbols(query.index, scope_id, &mut seen, &mut items);
 
     add_builtin_completions(&mut seen, &mut items);
@@ -443,27 +444,6 @@ pub fn handle_completion(
     } else {
         Some(CompletionResponse::Array(items))
     }
-}
-
-fn find_scope_at(index: &OwnedIndex, offset: TextSize) -> Option<u32> {
-    let mut best: Option<(u32, u32)> = None; // (scope_id, range_len)
-
-    for scope in index.scopes() {
-        if scope.range.contains(offset) {
-            let len = scope.range.len().to_u32();
-            match best {
-                Some((_, best_len)) if len < best_len => {
-                    best = Some((scope.id, len));
-                }
-                None => {
-                    best = Some((scope.id, len));
-                }
-                _ => {}
-            }
-        }
-    }
-
-    best.map(|(id, _)| id)
 }
 
 fn collect_visible_symbols(
