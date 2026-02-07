@@ -5,18 +5,18 @@ use anyhow::Result;
 use crossbeam_channel::{select, tick};
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
-    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
-    PublishDiagnostics,
+    DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
+    Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
     Completion, DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, HoverRequest,
     References, Rename, Request as _, SignatureHelpRequest,
 };
 use lsp_types::{
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    InitializeParams, InitializeResult, OneOf, PublishDiagnosticsParams, SaveOptions,
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, Uri,
+    DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, FileChangeType, InitializeParams, InitializeResult, OneOf,
+    PublishDiagnosticsParams, SaveOptions, ServerCapabilities, ServerInfo,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
 };
 
 use crate::background::{BackgroundParser, ParseResult};
@@ -24,6 +24,8 @@ use crate::debouncer::Debouncer;
 use crate::diagnostics::{parse_diagnostics, semantic_diagnostics};
 use crate::document::{Document, EditRecord};
 use crate::handlers;
+use sneklsp_vfs::{FileId, VfsPath};
+use sneklsp_workspace::Workspace;
 
 pub fn run_server() -> Result<()> {
     tracing::info!("starting sneklsp server");
@@ -76,8 +78,18 @@ pub fn run_server() -> Result<()> {
     connection.initialize_finish(id, serde_json::to_value(result)?)?;
     tracing::info!("server initialized");
 
-    // server main loop
     let mut server = Server::new(connection);
+
+    // discover workspace roots
+    if let Some(folders) = init_params.workspace_folders {
+        for f in folders {
+            if let Some(path) = VfsPath::from_uri(&f.uri) {
+                let file_ids = server.workspace.add_root(path.as_path());
+                server.index_files_background(file_ids);
+            }
+        }
+    }
+
     server.run()?;
 
     io_threads.join()?;
@@ -89,11 +101,13 @@ pub fn run_server() -> Result<()> {
 pub struct DocumentState {
     pub document: Document,
     pub pending_request_id: Option<u64>,
+    pub file_id: FileId,
 }
 
 struct Server {
     connection: Connection,
     documents: HashMap<Uri, DocumentState>,
+    workspace: Workspace,
     parser: BackgroundParser,
     debouncer: Debouncer,
 }
@@ -103,8 +117,25 @@ impl Server {
         Self {
             connection,
             documents: HashMap::new(),
+            workspace: Workspace::new(),
             parser: BackgroundParser::new(),
             debouncer: Debouncer::new(),
+        }
+    }
+
+    fn index_files_background(&mut self, file_ids: Vec<FileId>) {
+        for fid in file_ids {
+            let content = match self.workspace.vfs.read(fid) {
+                Some(c) => c.to_string(),
+                None => continue,
+            };
+            let uri = match self.workspace.vfs.file_path(fid).to_uri() {
+                Some(u) => u,
+                None => continue,
+            };
+
+            self.parser
+                .parse(uri, content, 0, Vec::new(), false, None, None);
         }
     }
 
@@ -250,7 +281,10 @@ impl Server {
 
             state.pending_request_id = None;
         } else {
-            tracing::debug!(?uri, "ignoring parse result for closed document");
+            // file is not open in editor but was indexed as part of workspace
+            if let Some(file_id) = self.workspace.lookup_uri(&uri) {
+                self.workspace.index_file(file_id);
+            }
             return;
         }
 
@@ -289,7 +323,8 @@ impl Server {
 
             GotoDefinition::METHOD => {
                 let (id, params) = cast_request::<GotoDefinition>(req)?;
-                let result = handlers::handle_goto_definition(params, &self.documents);
+                let result =
+                    handlers::handle_goto_definition(params, &self.documents, &self.workspace);
                 self.send_response(id, result);
             }
 
@@ -347,6 +382,10 @@ impl Server {
                 let params: DidCloseTextDocumentParams = serde_json::from_value(notif.params)?;
                 self.on_did_close(params)?;
             }
+            DidChangeWatchedFiles::METHOD => {
+                let params: DidChangeWatchedFilesParams = serde_json::from_value(notif.params)?;
+                self.on_did_change_watched_files(params)?;
+            }
             _ => {
                 tracing::debug!(?notif.method, "unhandled notification");
             }
@@ -362,16 +401,28 @@ impl Server {
 
         tracing::info!(?uri, "document openened");
 
+        let file_id = self.workspace.file_id_for_uri(&uri).unwrap_or_else(|| {
+            let path = VfsPath::from_uri(&uri)
+                .unwrap_or_else(|| VfsPath::new(std::path::PathBuf::from(uri.path().as_str())));
+            self.workspace.vfs.intern_path(path)
+        });
+
+        self.workspace
+            .vfs
+            .set_overlay(file_id, content.clone(), version);
+
         // submit for background parsing. content is restored when result arrives
         let document = Document::new(String::new(), version);
         let request_id =
             self.parser
                 .parse(uri.clone(), content, version, Vec::new(), false, None, None);
+
         self.documents.insert(
             uri,
             DocumentState {
                 document,
                 pending_request_id: request_id,
+                file_id,
             },
         );
 
@@ -392,7 +443,6 @@ impl Server {
             // submit updated content for backgroun parsing
             self.debouncer.schedule(uri, version);
         } else {
-            // fall back to using full content from last change
             let content = params
                 .content_changes
                 .into_iter()
@@ -400,12 +450,19 @@ impl Server {
                 .map(|c| c.text)
                 .unwrap_or_default();
 
+            let file_id = self.workspace.file_id_for_uri(&uri).unwrap_or_else(|| {
+                let path = VfsPath::from_uri(&uri)
+                    .unwrap_or_else(|| VfsPath::new(std::path::PathBuf::from(uri.path().as_str())));
+                self.workspace.vfs.intern_path(path)
+            });
+
             let document = Document::new(content, version);
             self.documents.insert(
                 uri.clone(),
                 DocumentState {
                     document,
                     pending_request_id: None,
+                    file_id,
                 },
             );
 
@@ -420,9 +477,40 @@ impl Server {
 
         tracing::info!(?uri, "document closed");
 
+        if let Some(state) = self.documents.get(&uri) {
+            self.workspace.vfs.remove_overlay(state.file_id);
+        }
+
         self.debouncer.cancel(&uri);
         self.documents.remove(&uri);
         self.send_diagnostics(&uri, vec![]);
+        Ok(())
+    }
+
+    fn on_did_change_watched_files(&mut self, params: DidChangeWatchedFilesParams) -> Result<()> {
+        for change in params.changes {
+            let uri = change.uri;
+            if self.documents.contains_key(&uri) {
+                continue;
+            }
+
+            match change.typ {
+                FileChangeType::CREATED | FileChangeType::CHANGED => {
+                    if let Some(file_id) = self.workspace.file_id_for_uri(&uri) {
+                        tracing::debug!(?uri, "re-indexing changed file");
+                        self.workspace.index_file(file_id);
+                    }
+                }
+                FileChangeType::DELETED => {
+                    if let Some(file_id) = self.workspace.file_id_for_uri(&uri) {
+                        tracing::debug!(?uri, "removing deleted file");
+                        self.workspace.remove_file_state(file_id);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         Ok(())
     }
 

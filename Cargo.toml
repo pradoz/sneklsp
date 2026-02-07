@@ -15,6 +15,8 @@ sneklsp_ast = { path = "crates/sneklsp_ast" }
 sneklsp_parser = { path = "crates/sneklsp_parser" }
 sneklsp_server = { path = "crates/sneklsp_server" }
 sneklsp_index = { path = "crates/sneklsp_index" }
+sneklsp_vfs = { path = "crates/sneklsp_vfs" }
+sneklsp_workspace = { path = "crates/sneklsp_workspace" }
 
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }

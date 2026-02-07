@@ -11,6 +11,7 @@ use crate::builtins::{BUILTINS, BuiltinInfo};
 use crate::server::DocumentState;
 use sneklsp_index::{OwnedIndex, SymbolData};
 use sneklsp_text::{LineIndex, TextRange, TextSize};
+use sneklsp_workspace::{ImportResolver, Workspace};
 
 #[inline]
 pub fn to_lsp_range(range: TextRange, line_index: &LineIndex) -> Range {
@@ -222,6 +223,7 @@ pub fn handle_document_symbol(
 pub fn handle_goto_definition(
     params: GotoDefinitionParams,
     documents: &HashMap<Uri, DocumentState>,
+    workspace: &Workspace,
 ) -> Option<GotoDefinitionResponse> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -231,9 +233,73 @@ pub fn handle_goto_definition(
 
     let symbol = query.find_symbol_at(offset)?;
 
+    if matches!(
+        symbol.kind,
+        sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
+    ) {
+        if let Some(location) = resolve_import_definition(symbol, query.index, workspace) {
+            return Some(GotoDefinitionResponse::Scalar(location));
+        }
+    }
+
     Some(GotoDefinitionResponse::Scalar(
         query.location(symbol.selection_range),
     ))
+}
+
+fn resolve_import_definition(
+    symbol: &SymbolData,
+    index: &OwnedIndex,
+    workspace: &Workspace,
+) -> Option<Location> {
+    let resolver = ImportResolver::new(workspace);
+    let name = index.symbol_name(symbol);
+
+    // try to find the import statement that defined this symbol
+    if symbol.kind == sneklsp_index::SymbolKind::Import {
+        let resolved = resolver.resolve_import(name)?;
+        let target_path = workspace.vfs.file_path(resolved.file_id);
+        let target_uri = target_path.to_uri()?;
+
+        // jump to top of file
+        let range = Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: Position {
+                line: 0,
+                character: 0,
+            },
+        };
+
+        return Some(Location {
+            uri: target_uri,
+            range,
+        });
+    }
+
+    // `from foo import bar` --> find `foo` module and `bar` symbol
+    if symbol.kind == sneklsp_index::SymbolKind::ImportedSymbol {
+        let results = workspace.find_exported_symbol(name);
+
+        for (file_id, symbol_id) in results {
+            let target_path = workspace.vfs.file_path(file_id);
+            let target_uri = target_path.to_uri()?;
+            let target_state = workspace.file_state(file_id)?;
+            let target_index = target_state.index.as_ref()?;
+            let target_line_index = &target_state.line_index;
+
+            if let Some(target_sym) = target_index.symbol(symbol_id) {
+                return Some(Location {
+                    uri: target_uri,
+                    range: to_lsp_range(target_sym.range, target_line_index),
+                });
+            }
+        }
+    }
+
+    None
 }
 
 enum HoverTarget<'a> {
