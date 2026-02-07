@@ -209,6 +209,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 break;
             }
 
+            let before = self.current.range.start();
             match self.try_parse_stmt() {
                 RecoveredStatement::Ok(stmt) => body.push(stmt),
                 RecoveredStatement::Error(e) => {
@@ -219,6 +220,9 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     self.synchronize();
                 }
                 RecoveredStatement::Eof => break,
+            }
+            if self.current.range.start() == before && !self.at_end() {
+                self.advance();
             }
         }
 
@@ -246,6 +250,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 
     fn synchronize(&mut self) {
+        let before = self.current.range.start();
+
         while !self.at_end() {
             // if we just passed a newline and are at a statement start, recover here
             if self.previous.kind == TokenKind::Newline {
@@ -272,6 +278,11 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 continue;
             }
 
+            self.advance();
+        }
+
+        // force advance if we didn't move
+        if !self.at_end() && self.current.range.start() == before {
             self.advance();
         }
     }
