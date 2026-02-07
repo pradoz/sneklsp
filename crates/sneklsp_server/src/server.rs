@@ -441,7 +441,7 @@ impl Server {
             .set_overlay(file_id, content.clone(), version);
 
         // submit for background parsing. content is restored when result arrives
-        let document = Document::new(String::new(), version);
+        let document = Document::new(content.clone(), version);
         let request_id =
             self.parser
                 .parse(uri.clone(), content, version, Vec::new(), false, None, None);
