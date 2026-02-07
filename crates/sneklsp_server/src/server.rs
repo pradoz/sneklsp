@@ -10,8 +10,8 @@ use lsp_types::notification::{
 };
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
-    FoldingRangeRequest, GotoDefinition, HoverRequest, References, Rename, Request as _,
-    SelectionRangeRequest, SignatureHelpRequest,
+    FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, References, Rename,
+    Request as _, SelectionRangeRequest, SignatureHelpRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
@@ -59,6 +59,7 @@ pub fn run_server() -> Result<()> {
         definition_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(lsp_types::FoldingRangeProviderCapability::Simple(true)),
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Left(true)),
         selection_range_provider: Some(lsp_types::SelectionRangeProviderCapability::Simple(true)),
@@ -335,6 +336,12 @@ impl Server {
                 let (id, params) = cast_request::<GotoDefinition>(req)?;
                 let result =
                     handlers::handle_goto_definition(params, &self.documents, &self.workspace);
+                self.send_response(id, result);
+            }
+
+            InlayHintRequest::METHOD => {
+                let (id, params) = cast_request::<InlayHintRequest>(req)?;
+                let result = handlers::handle_inlay_hint(params, &self.documents);
                 self.send_response(id, result);
             }
 

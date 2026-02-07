@@ -3,9 +3,10 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentSymbol,
     DocumentSymbolParams, DocumentSymbolResponse, FoldingRange, FoldingRangeKind,
     FoldingRangeParams, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
-    HoverParams, Location, MarkupContent, MarkupKind, Position, Range, ReferenceParams,
-    RenameParams, SelectionRange, SelectionRangeParams, SignatureHelp, SignatureHelpParams,
-    SignatureInformation, SymbolKind, TextEdit, Uri, WorkspaceEdit,
+    HoverParams, InlayHint, InlayHintKind, InlayHintLabel, InlayHintParams, Location,
+    MarkupContent, MarkupKind, Position, Range, ReferenceParams, RenameParams, SelectionRange,
+    SelectionRangeParams, SignatureHelp, SignatureHelpParams, SignatureInformation, SymbolKind,
+    TextEdit, Uri, WorkspaceEdit,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -335,6 +336,260 @@ fn fold_import_blocks(index: &OwnedIndex, line_index: &LineIndex, ranges: &mut V
             collapsed_text: None,
         });
     }
+}
+pub fn handle_inlay_hint(
+    params: InlayHintParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<Vec<InlayHint>> {
+    let uri = params.text_document.uri;
+    let query = get_document_query(&uri, documents)?;
+
+    let source = query.index.source();
+    let request_range = params.range;
+    let mut hints = Vec::new();
+
+    // scan references that resolve to callable symbols
+    for reference in query.index.references() {
+        let resolved_id = match reference.resolved {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let ref_pos = query.line_index.position(reference.range.start());
+
+        // skip references outside the requested range
+        if ref_pos.line < request_range.start.line || ref_pos.line > request_range.end.line {
+            continue;
+        }
+
+        let target = match query.index.symbol(resolved_id) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        if !is_callable_symbol(target) {
+            continue;
+        }
+
+        // get the signature to extract parameter names
+        let param_names = match extract_param_names(query.index, target) {
+            Some(names) if !names.is_empty() => names,
+            _ => continue,
+        };
+
+        // find the opening paren after the reference
+        let ref_end = reference.range.end().to_usize();
+        let after_ref = &source[ref_end..];
+
+        let paren_offset = match after_ref.find('(') {
+            Some(o) => ref_end + o,
+            None => continue,
+        };
+
+        // find argument positions
+        let arg_positions = find_argument_starts(source, paren_offset + 1);
+
+        // annotate each positional arg with parameter name
+        for (i, &arg_offset) in arg_positions.iter().enumerate() {
+            if i >= param_names.len() {
+                break;
+            }
+
+            let param_name = &param_names[i];
+
+            // skip `self` and `cls` parameters
+            if *param_name == "self" || *param_name == "cls" {
+                continue;
+            }
+
+            // skip if the argument already looks like a keyword arg
+            let arg_text = &source[arg_offset..];
+            if looks_like_keyword_arg(arg_text) {
+                break; // keyword args start, no more positional hints
+            }
+
+            let pos = query
+                .line_index
+                .position(sneklsp_text::TextSize::new(arg_offset as u32));
+            hints.push(InlayHint {
+                position: Position {
+                    line: pos.line,
+                    character: pos.column,
+                },
+                label: InlayHintLabel::String(format!("{}:", param_name)),
+                kind: Some(InlayHintKind::PARAMETER),
+                text_edits: None,
+                tooltip: None,
+                padding_left: None,
+                padding_right: Some(true),
+                data: None,
+            });
+        }
+    }
+
+    if hints.is_empty() { None } else { Some(hints) }
+}
+
+fn extract_param_names(index: &OwnedIndex, symbol: &SymbolData) -> Option<Vec<String>> {
+    let sig = index.symbol_signature(symbol)?;
+
+    // extract content between first ( and matching )
+    let paren_start = sig.find('(')?;
+    let paren_content = &sig[paren_start + 1..];
+    let paren_end = find_matching_close(paren_content)?;
+    let params_str = &paren_content[..paren_end];
+
+    let mut names = Vec::new();
+    let mut depth = 0u32;
+    let mut current_start = 0;
+
+    for (i, ch) in params_str.char_indices() {
+        match ch {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                if let Some(name) = extract_single_param_name(&params_str[current_start..i]) {
+                    names.push(name);
+                }
+                current_start = i + 1;
+            }
+            _ => {}
+        }
+    }
+
+    // last parameter
+    if current_start < params_str.len() {
+        if let Some(name) = extract_single_param_name(&params_str[current_start..]) {
+            names.push(name);
+        }
+    }
+
+    Some(names)
+}
+
+fn extract_single_param_name(param: &str) -> Option<String> {
+    let trimmed = param.trim();
+
+    if trimmed.is_empty() || trimmed == "/" || trimmed == "*" {
+        return None;
+    }
+
+    // skip *args, **kwargs
+    let trimmed = trimmed.trim_start_matches('*');
+
+    // take identifier before `:` or `=`
+    let name: String = trimmed
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+
+    if name.is_empty() { None } else { Some(name) }
+}
+
+fn find_matching_close(s: &str) -> Option<usize> {
+    let mut depth = 0u32;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' | '[' | '{' => depth += 1,
+            ')' if depth == 0 => return Some(i),
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn find_argument_starts(source: &str, after_paren: usize) -> Vec<usize> {
+    let bytes = source.as_bytes();
+    let len = bytes.len();
+    let mut positions = Vec::new();
+    let mut depth = 0u32;
+    let mut i = after_paren;
+
+    // find first argument
+    while i < len && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+
+    if i < len && bytes[i] != b')' {
+        positions.push(i);
+    }
+
+    while i < len {
+        match bytes[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => {
+                if depth == 0 {
+                    break;
+                }
+                depth = depth.saturating_sub(1);
+            }
+            b',' if depth == 0 => {
+                // skip whitespace after comma
+                let mut j = i + 1;
+                while j < len && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if j < len && bytes[j] != b')' {
+                    positions.push(j);
+                }
+            }
+            b'\'' | b'"' => {
+                // skip string literal annotations
+                i = skip_string_literal(bytes, i);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    positions
+}
+
+fn skip_string_literal(bytes: &[u8], start: usize) -> usize {
+    let quote = bytes[start];
+    let mut i = start + 1;
+    let len = bytes.len();
+
+    // check triple quote
+    let triple = i + 1 < len && bytes[i] == quote && bytes[i + 1] == quote;
+    if triple {
+        i += 2;
+    }
+
+    while i < len {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == quote {
+            if triple {
+                if i + 2 < len && bytes[i + 1] == quote && bytes[i + 2] == quote {
+                    return i + 2;
+                }
+            } else {
+                return i;
+            }
+        }
+        i += 1;
+    }
+
+    i.saturating_sub(1)
+}
+
+fn looks_like_keyword_arg(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    // check for `name=` pattern (but not `==`)
+    if let Some(eq_pos) = trimmed.find('=') {
+        if eq_pos > 0 {
+            let before = &trimmed[..eq_pos];
+            let after_eq = trimmed.as_bytes().get(eq_pos + 1);
+            if before.chars().all(|c| c.is_alphanumeric() || c == '_') && after_eq != Some(&b'=') {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 pub fn handle_goto_definition(
