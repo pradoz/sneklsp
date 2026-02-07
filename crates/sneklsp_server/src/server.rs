@@ -9,9 +9,9 @@ use lsp_types::notification::{
     Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentHighlightRequest, DocumentSymbolRequest, FoldingRangeRequest,
-    GotoDefinition, HoverRequest, References, Rename, Request as _, SelectionRangeRequest,
-    SignatureHelpRequest,
+    CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
+    FoldingRangeRequest, GotoDefinition, HoverRequest, References, Rename, Request as _,
+    SelectionRangeRequest, SignatureHelpRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
@@ -50,6 +50,7 @@ pub fn run_server() -> Result<()> {
                 save: Some(SaveOptions::default().into()),
             },
         )),
+        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Simple(true)),
         completion_provider: Some(lsp_types::CompletionOptions {
             trigger_characters: Some(vec![".".to_string()]),
             ..Default::default()
@@ -312,6 +313,12 @@ impl Server {
         tracing::debug!(?req.method, "handling request");
 
         match req.method.as_str() {
+            CodeActionRequest::METHOD => {
+                let (id, params) = cast_request::<CodeActionRequest>(req)?;
+                let result = handlers::handle_code_action(params, &self.documents);
+                self.send_response(id, result);
+            }
+
             Completion::METHOD => {
                 let (id, params) = cast_request::<Completion>(req)?;
                 let result = handlers::handle_completion(params, &self.documents);

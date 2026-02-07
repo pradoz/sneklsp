@@ -1,4 +1,5 @@
 use lsp_types::{
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentSymbol,
     DocumentSymbolParams, DocumentSymbolResponse, FoldingRange, FoldingRangeKind,
     FoldingRangeParams, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
@@ -32,14 +33,6 @@ pub fn to_lsp_range(range: TextRange, line_index: &LineIndex) -> Range {
 }
 
 #[inline]
-pub fn from_lsp_position(pos: Position, line_index: &LineIndex) -> Option<TextSize> {
-    line_index.offset(sneklsp_text::Position {
-        line: pos.line,
-        column: pos.character,
-    })
-}
-
-#[inline]
 pub fn to_lsp_symbol_kind(kind: sneklsp_index::SymbolKind) -> SymbolKind {
     match kind {
         sneklsp_index::SymbolKind::Function => SymbolKind::FUNCTION,
@@ -67,6 +60,22 @@ pub fn to_lsp_completion_kind(kind: sneklsp_index::SymbolKind) -> CompletionItem
         sneklsp_index::SymbolKind::Property => CompletionItemKind::PROPERTY,
         sneklsp_index::SymbolKind::TypeAlias => CompletionItemKind::TYPE_PARAMETER,
     }
+}
+
+#[inline]
+pub fn from_lsp_position(pos: Position, line_index: &LineIndex) -> Option<TextSize> {
+    line_index.offset(sneklsp_text::Position {
+        line: pos.line,
+        column: pos.character,
+    })
+}
+
+#[inline]
+fn ranges_overlap_lsp(a: Range, b: Range) -> bool {
+    a.start.line <= b.end.line
+        && b.start.line <= a.end.line
+        && !(a.start.line == b.end.line && a.start.character > b.end.character)
+        && !(b.start.line == a.end.line && b.start.character > a.end.character)
 }
 
 pub struct DocumentQuery<'a> {
@@ -751,6 +760,88 @@ pub fn handle_document_highlight(
         None
     } else {
         Some(highlights)
+    }
+}
+
+pub fn handle_code_action(
+    params: CodeActionParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<CodeActionResponse> {
+    let uri = params.text_document.uri;
+    let query = get_document_query(&uri, documents)?;
+
+    let mut actions = Vec::new();
+
+    for symbol in query.index.symbols() {
+        if !matches!(
+            symbol.kind,
+            sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
+        ) {
+            continue;
+        }
+
+        let has_refs = query.index.references_to(symbol.id).next().is_some();
+        if has_refs {
+            continue;
+        }
+
+        let symbol_range = to_lsp_range(symbol.selection_range, query.line_index);
+
+        // only offer action if cursor/selection overlaps the unused import
+        if !ranges_overlap_lsp(params.range, symbol_range) {
+            continue;
+        }
+
+        let name = query.index.symbol_name(symbol);
+
+        // compute the range to delete: the entire line containing the import
+        let full_line_range = line_range_for_symbol(symbol, query.line_index);
+
+        let mut changes = HashMap::new();
+        changes.insert(
+            uri.clone(),
+            vec![TextEdit {
+                range: full_line_range,
+                new_text: String::new(),
+            }],
+        );
+
+        actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+            title: format!("Remove unused import '{}'", name),
+            kind: Some(CodeActionKind::QUICKFIX),
+            diagnostics: None,
+            edit: Some(WorkspaceEdit {
+                changes: Some(changes),
+                document_changes: None,
+                change_annotations: None,
+            }),
+            command: None,
+            is_preferred: Some(true),
+            disabled: None,
+            data: None,
+        }));
+    }
+
+    if actions.is_empty() {
+        None
+    } else {
+        Some(actions)
+    }
+}
+
+fn line_range_for_symbol(symbol: &SymbolData, line_index: &LineIndex) -> Range {
+    let start_pos = line_index.position(symbol.range.start());
+    let end_pos = line_index.position(symbol.range.end());
+
+    Range {
+        start: Position {
+            line: start_pos.line,
+            character: 0,
+        },
+        end: Position {
+            line: end_pos.line + 1,
+            character: 0,
+        },
     }
 }
 
