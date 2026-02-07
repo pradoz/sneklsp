@@ -9,8 +9,9 @@ use lsp_types::notification::{
     Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentHighlightRequest, DocumentSymbolRequest, GotoDefinition, HoverRequest,
-    References, Rename, Request as _, SignatureHelpRequest,
+    Completion, DocumentHighlightRequest, DocumentSymbolRequest, FoldingRangeRequest,
+    GotoDefinition, HoverRequest, References, Rename, Request as _, SelectionRangeRequest,
+    SignatureHelpRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
@@ -55,9 +56,11 @@ pub fn run_server() -> Result<()> {
         }),
         document_symbol_provider: Some(OneOf::Left(true)),
         definition_provider: Some(OneOf::Left(true)),
+        folding_range_provider: Some(lsp_types::FoldingRangeProviderCapability::Simple(true)),
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Left(true)),
+        selection_range_provider: Some(lsp_types::SelectionRangeProviderCapability::Simple(true)),
         signature_help_provider: Some(lsp_types::SignatureHelpOptions {
             trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
             retrigger_characters: Some(vec![",".to_string()]),
@@ -337,6 +340,18 @@ impl Server {
             References::METHOD => {
                 let (id, params) = cast_request::<References>(req)?;
                 let result = handlers::handle_references(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            FoldingRangeRequest::METHOD => {
+                let (id, params) = cast_request::<FoldingRangeRequest>(req)?;
+                let result = handlers::handle_folding_range(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            SelectionRangeRequest::METHOD => {
+                let (id, params) = cast_request::<SelectionRangeRequest>(req)?;
+                let result = handlers::handle_selection_range(params, &self.documents);
                 self.send_response(id, result);
             }
 

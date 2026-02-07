@@ -1,15 +1,16 @@
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentSymbol,
-    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
-    Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind, Position, Range,
-    ReferenceParams, RenameParams, SignatureHelp, SignatureHelpParams, SignatureInformation,
-    SymbolKind, TextEdit, Uri, WorkspaceEdit,
+    DocumentSymbolParams, DocumentSymbolResponse, FoldingRange, FoldingRangeKind,
+    FoldingRangeParams, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+    HoverParams, Location, MarkupContent, MarkupKind, Position, Range, ReferenceParams,
+    RenameParams, SelectionRange, SelectionRangeParams, SignatureHelp, SignatureHelpParams,
+    SignatureInformation, SymbolKind, TextEdit, Uri, WorkspaceEdit,
 };
 use std::collections::{HashMap, HashSet};
 
 use crate::builtins::{BUILTINS, BuiltinInfo};
 use crate::server::DocumentState;
-use sneklsp_index::{OwnedIndex, SymbolData};
+use sneklsp_index::{OwnedIndex, ScopeData, SymbolData};
 use sneklsp_text::{LineIndex, TextRange, TextSize};
 use sneklsp_workspace::{ImportResolver, Workspace};
 
@@ -218,6 +219,113 @@ pub fn handle_document_symbol(
     }
 
     Some(DocumentSymbolResponse::Nested(symbols))
+}
+
+pub fn handle_folding_range(
+    params: FoldingRangeParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<Vec<FoldingRange>> {
+    let uri = params.text_document.uri;
+    let query = get_document_query(&uri, documents)?;
+
+    let mut ranges = Vec::new();
+
+    for scope in query.index.scopes() {
+        let kind = match scope.kind {
+            sneklsp_index::ScopeKind::Module => continue,
+            sneklsp_index::ScopeKind::Function
+            | sneklsp_index::ScopeKind::Class
+            | sneklsp_index::ScopeKind::Lambda
+            | sneklsp_index::ScopeKind::Comprehension => FoldingRangeKind::Region,
+        };
+
+        let start = query.line_index.position(scope.range.start());
+        let end = query.line_index.position(scope.range.end());
+
+        if end.line > start.line {
+            ranges.push(FoldingRange {
+                start_line: start.line,
+                start_character: Some(start.column),
+                end_line: end.line,
+                end_character: Some(end.column),
+                kind: Some(kind),
+                collapsed_text: None,
+            });
+        }
+    }
+
+    fold_import_blocks(query.index, query.line_index, &mut ranges);
+
+    if ranges.is_empty() {
+        None
+    } else {
+        Some(ranges)
+    }
+}
+
+fn fold_import_blocks(index: &OwnedIndex, line_index: &LineIndex, ranges: &mut Vec<FoldingRange>) {
+    let root_scope = match index.root_scope() {
+        Some(s) => s,
+        None => return,
+    };
+
+    let mut import_symbols: Vec<&SymbolData> = Vec::new();
+
+    for &sym_id in &root_scope.symbols {
+        if let Some(symbol) = index.symbol(sym_id) {
+            if matches!(
+                symbol.kind,
+                sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
+            ) {
+                import_symbols.push(symbol);
+            }
+        }
+    }
+
+    if import_symbols.len() < 2 {
+        return;
+    }
+
+    // sort by start position
+    let mut block_start = line_index.position(import_symbols[0].range.start());
+    let mut block_end = line_index.position(import_symbols[0].range.end());
+
+    for symbol in &import_symbols[1..] {
+        let sym_start = line_index.position(symbol.range.start());
+        let sym_end = line_index.position(symbol.range.end());
+
+        // consective/adjacent lines
+        if sym_start.line <= block_end.line + 1 {
+            block_end = sym_end;
+        } else {
+            // emit previous block if multi-line
+            if block_end.line > block_start.line {
+                ranges.push(FoldingRange {
+                    start_line: block_start.line,
+                    start_character: Some(block_start.column),
+                    end_line: block_end.line,
+                    end_character: Some(block_end.column),
+                    kind: Some(FoldingRangeKind::Imports),
+                    collapsed_text: None,
+                });
+            }
+
+            block_start = sym_start;
+            block_end = sym_end;
+        }
+    }
+
+    // emit final block
+    if block_end.line > block_start.line {
+        ranges.push(FoldingRange {
+            start_line: block_start.line,
+            start_character: Some(block_start.column),
+            end_line: block_end.line,
+            end_character: Some(block_end.column),
+            kind: Some(FoldingRangeKind::Imports),
+            collapsed_text: None,
+        });
+    }
 }
 
 pub fn handle_goto_definition(
@@ -460,6 +568,106 @@ pub fn handle_rename(
 enum CallTarget<'a> {
     Symbol(&'a SymbolData),
     Builtin(&'static crate::builtins::BuiltinInfo),
+}
+
+pub fn handle_selection_range(
+    params: SelectionRangeParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<Vec<SelectionRange>> {
+    let uri = params.text_document.uri;
+    let query = get_document_query(&uri, documents)?;
+
+    let mut results = Vec::with_capacity(params.positions.len());
+
+    for pos in params.positions {
+        let offset = match from_lsp_position(pos, query.line_index) {
+            Some(o) => o,
+            None => {
+                results.push(SelectionRange {
+                    range: Range {
+                        start: pos,
+                        end: pos,
+                    },
+                    parent: None,
+                });
+                continue;
+            }
+        };
+
+        let selection = build_selection_range(query.index, query.line_index, offset);
+        results.push(selection);
+    }
+
+    Some(results)
+}
+
+fn build_selection_range(
+    index: &OwnedIndex,
+    line_index: &LineIndex,
+    offset: TextSize,
+) -> SelectionRange {
+    let mut containing: Vec<&ScopeData> = Vec::new();
+
+    for scope in index.scopes() {
+        if scope.range.contains(offset) {
+            containing.push(scope);
+        }
+    }
+
+    containing.sort_unstable_by_key(|s| s.range.len().to_u32()); // sort by innermost first
+
+    let symbol_range = index.symbol_at(offset).map(|s| s.selection_range);
+    let ref_range = index.reference_at(offset).map(|s| s.range);
+
+    let mut ranges: Vec<TextRange> = Vec::new();
+    if let Some(r) = ref_range {
+        ranges.push(r);
+    } else if let Some(r) = symbol_range {
+        ranges.push(r);
+    }
+
+    if let Some(symbol) = index.symbol_at(offset) {
+        if symbol.range != symbol.selection_range {
+            if ranges.last().map_or(true, |&last| last != symbol.range) {
+                ranges.push(symbol.range);
+            }
+        }
+    }
+
+    for scope in &containing {
+        if ranges.last().map_or(true, |&last| last != scope.range) {
+            ranges.push(scope.range);
+        }
+    }
+
+    ranges.dedup();
+
+    let mut current: Option<SelectionRange> = None;
+
+    for range in ranges.into_iter().rev() {
+        let lsp_range = to_lsp_range(range, line_index);
+        current = Some(SelectionRange {
+            range: lsp_range,
+            parent: current.map(Box::new),
+        });
+    }
+
+    current.unwrap_or_else(|| {
+        let pos = line_index.position(offset);
+        SelectionRange {
+            range: Range {
+                start: Position {
+                    line: pos.line,
+                    character: pos.column,
+                },
+                end: Position {
+                    line: pos.line,
+                    character: pos.column,
+                },
+            },
+            parent: None,
+        }
+    })
 }
 
 pub fn handle_signature_help(
