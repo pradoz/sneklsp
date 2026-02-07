@@ -34,7 +34,7 @@ impl<'a> ImportResolver<'a> {
         symbol_name: &str,
     ) -> Option<ResolvedImport> {
         let file_id = self.workspace.resolve_module(module_name)?;
-        let state = self.workspace.file_state(file_id)?;
+        let state = self.workspace.get_file_state(file_id)?;
         let index = state.index.as_ref()?;
 
         find_exported_symbol(index, symbol_name).map(|(sid, range)| ResolvedImport {

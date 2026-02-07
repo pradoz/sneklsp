@@ -94,8 +94,12 @@ impl Workspace {
         true
     }
 
+    pub fn set_file_state(&mut self, id: FileId, state: FileState) {
+        self.files.insert(id, state);
+    }
+
     #[inline]
-    pub fn file_state(&self, id: FileId) -> Option<&FileState> {
+    pub fn get_file_state(&self, id: FileId) -> Option<&FileState> {
         self.files.get(&id)
     }
 

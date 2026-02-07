@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossbeam_channel::{select, tick};
+use crossbeam_channel::{Receiver, select, tick};
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
     DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
@@ -26,7 +26,7 @@ use crate::diagnostics::{parse_diagnostics, semantic_diagnostics};
 use crate::document::{Document, EditRecord};
 use crate::handlers;
 use sneklsp_vfs::{FileId, VfsPath};
-use sneklsp_workspace::Workspace;
+use sneklsp_workspace::{FileState, Workspace};
 
 pub fn run_server() -> Result<()> {
     tracing::info!("starting sneklsp server");
@@ -115,6 +115,7 @@ struct Server {
     workspace: Workspace,
     parser: BackgroundParser,
     debouncer: Debouncer,
+    workspace_index_rx: Option<Receiver<(FileId, FileState)>>,
 }
 
 impl Server {
@@ -125,25 +126,94 @@ impl Server {
             workspace: Workspace::new(),
             parser: BackgroundParser::new(),
             debouncer: Debouncer::new(),
+            workspace_index_rx: None,
         }
     }
 
     fn index_files_background(&mut self, file_ids: Vec<FileId>) {
-        for fid in file_ids {
-            let content = match self.workspace.vfs.read(fid) {
-                Some(c) => c.to_string(),
-                None => continue,
-            };
-            let uri = match self.workspace.vfs.file_path(fid).to_uri() {
-                Some(u) => u,
-                None => continue,
-            };
-
-            self.parser
-                .parse(uri, content, 0, Vec::new(), false, None, None);
+        if file_ids.is_empty() {
+            return;
         }
+
+        tracing::info!(
+            file_count = file_ids.len(),
+            "starting background workspace indexing"
+        );
+
+        // collect paths and defer reading to the background thread
+        let files: Vec<(FileId, std::path::PathBuf)> = file_ids
+            .iter()
+            .filter_map(|&id| {
+                let path = self.workspace.vfs.file_path(id).as_path().to_path_buf();
+                Some((id, path))
+            })
+            .collect();
+
+        let (tx, rx) = crossbeam_channel::bounded(files.len().max(1));
+        self.workspace_index_rx = Some(rx);
+
+        std::thread::Builder::new()
+            .name("sneklsp-workspace-index".to_string())
+            .spawn(move || {
+                for (file_id, path) in files {
+                    // read from disk on background thread
+                    let content = match std::fs::read_to_string(&path) {
+                        Ok(c) => c,
+                        Err(_) => continue,
+                    };
+
+                    let line_index = sneklsp_text::LineIndex::new(&content);
+                    let arena =
+                        sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
+                    let output = sneklsp_parser::parse_recovering(&content, &arena);
+
+                    let index = if !output.module.body.is_empty() || output.errors.is_empty() {
+                        let idx = sneklsp_index::index_module(&content, &output.module);
+                        Some(sneklsp_index::OwnedIndex::new(content.clone(), &idx))
+                    } else {
+                        None
+                    };
+
+                    let tokens = sneklsp_lexer::tokenize(&content);
+
+                    let _ = tx.send((
+                        file_id,
+                        sneklsp_workspace::FileState {
+                            index,
+                            line_index,
+                            tokens,
+                            version: None,
+                        },
+                    ));
+                }
+                tracing::info!("background workspace indexing complete");
+            })
+            .expect("failed to spawn workspace indexing thread");
     }
 
+    fn drain_workspace_index(&mut self) {
+        let done = if let Some(ref rx) = self.workspace_index_rx {
+            // drain without blocking — process whatever is ready
+            let mut count = 0;
+            while let Ok((file_id, state)) = rx.try_recv() {
+                self.workspace.set_file_state(file_id, state);
+                count += 1;
+            }
+
+            if count > 0 {
+                tracing::debug!(count, "drained workspace index results");
+            }
+
+            // channel empty + sender dropped = done
+            rx.is_empty() && rx.len() == 0
+        } else {
+            false
+        };
+
+        if done {
+            self.workspace_index_rx = None;
+        }
+    }
     fn run(&mut self) -> Result<()> {
         tracing::info!("server main loop starting");
 
@@ -183,6 +253,7 @@ impl Server {
 
                 recv(ticker) -> _ => {
                     self.process_debounced();
+                    self.drain_workspace_index();
                 }
             }
         }

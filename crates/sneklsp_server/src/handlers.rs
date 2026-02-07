@@ -658,7 +658,7 @@ fn resolve_import_definition(
         for (file_id, symbol_id) in results {
             let target_path = workspace.vfs.file_path(file_id);
             let target_uri = target_path.to_uri()?;
-            let target_state = workspace.file_state(file_id)?;
+            let target_state = workspace.get_file_state(file_id)?;
             let target_index = target_state.index.as_ref()?;
             let target_line_index = &target_state.line_index;
 

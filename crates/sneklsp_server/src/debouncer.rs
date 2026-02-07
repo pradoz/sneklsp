@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use lsp_types::Uri;
 
-const DEFAULT_DEBOUNCE_MS: u64 = 150;
+const DEFAULT_DEBOUNCE_MS: u64 = 50;
 
 pub struct Debouncer {
     pending: HashMap<Uri, PendingWork>,
