@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 
 use sneklsp_ast::AstArena;
@@ -18,8 +18,8 @@ pub struct FileState {
 
 pub struct Workspace {
     pub vfs: Vfs,
-    files: HashMap<FileId, FileState>,
-    module_map: HashMap<String, FileId>,
+    files: FxHashMap<FileId, FileState>,
+    module_map: FxHashMap<String, FileId>,
     roots: Vec<VfsPath>,
 }
 
@@ -27,8 +27,8 @@ impl Workspace {
     pub fn new() -> Self {
         Self {
             vfs: Vfs::new(),
-            files: HashMap::new(),
-            module_map: HashMap::new(),
+            files: FxHashMap::default(),
+            module_map: FxHashMap::default(),
             roots: Vec::new(),
         }
     }

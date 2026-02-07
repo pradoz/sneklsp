@@ -14,6 +14,7 @@ sneklsp_index.workspace = true
 sneklsp_vfs.workspace = true
 
 lsp-types.workspace = true
+rustc-hash.workspace = true
 tracing.workspace = true
 
 [lints]

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -49,7 +49,7 @@ struct FileEntry {
 }
 
 pub struct Vfs {
-    path_to_id: HashMap<VfsPath, FileId>,
+    path_to_id: FxHashMap<VfsPath, FileId>,
     id_to_path: Vec<VfsPath>,
     entries: Vec<FileEntry>,
 }
@@ -57,7 +57,7 @@ pub struct Vfs {
 impl Vfs {
     pub fn new() -> Self {
         Self {
-            path_to_id: HashMap::new(),
+            path_to_id: FxHashMap::default(),
             id_to_path: Vec::new(),
             entries: Vec::new(),
         }
