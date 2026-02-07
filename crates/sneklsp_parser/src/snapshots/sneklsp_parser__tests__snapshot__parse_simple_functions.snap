@@ -96,6 +96,7 @@ Ok(
                     ],
                     decorators: [],
                     returns: None,
+                    is_async: false,
                     range: TextRange {
                         start: TextSize(
                             0,
@@ -210,6 +211,7 @@ Ok(
                     ],
                     decorators: [],
                     returns: None,
+                    is_async: false,
                     range: TextRange {
                         start: TextSize(
                             47,
@@ -450,6 +452,7 @@ Ok(
                     ],
                     decorators: [],
                     returns: None,
+                    is_async: false,
                     range: TextRange {
                         start: TextSize(
                             81,
@@ -636,6 +639,7 @@ Ok(
                                 ],
                                 decorators: [],
                                 returns: None,
+                                is_async: false,
                                 range: TextRange {
                                     start: TextSize(
                                         182,
@@ -841,6 +845,7 @@ Ok(
                                 ],
                                 decorators: [],
                                 returns: None,
+                                is_async: false,
                                 range: TextRange {
                                     start: TextSize(
                                         251,

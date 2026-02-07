@@ -4,7 +4,6 @@ use sneklsp_text::TextRange;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Statement<'ast> {
     FunctionDef(&'ast FunctionDef<'ast>),
-    AsyncFunctionDef(&'ast AsyncFunctionDef<'ast>),
     ClassDef(&'ast ClassDef<'ast>),
     Return(&'ast ReturnStmt<'ast>),
     Assign(&'ast AssignStmt<'ast>),
@@ -12,10 +11,8 @@ pub enum Statement<'ast> {
     AnnAssign(&'ast AnnAssignStmt<'ast>),
     If(&'ast IfStmt<'ast>),
     For(&'ast ForStmt<'ast>),
-    AsyncFor(&'ast AsyncForStmt<'ast>),
     While(&'ast WhileStmt<'ast>),
     With(&'ast WithStmt<'ast>),
-    AsyncWith(&'ast AsyncWithStmt<'ast>),
     Try(&'ast TryStmt<'ast>),
     Raise(&'ast RaiseStmt<'ast>),
     Assert(&'ast AssertStmt<'ast>),
@@ -34,7 +31,6 @@ impl<'ast> Statement<'ast> {
     pub const fn range(&self) -> TextRange {
         match self {
             Statement::FunctionDef(s) => s.range,
-            Statement::AsyncFunctionDef(s) => s.range,
             Statement::ClassDef(s) => s.range,
             Statement::Return(s) => s.range,
             Statement::Assign(s) => s.range,
@@ -42,10 +38,8 @@ impl<'ast> Statement<'ast> {
             Statement::AnnAssign(s) => s.range,
             Statement::If(s) => s.range,
             Statement::For(s) => s.range,
-            Statement::AsyncFor(s) => s.range,
             Statement::While(s) => s.range,
             Statement::With(s) => s.range,
-            Statement::AsyncWith(s) => s.range,
             Statement::Try(s) => s.range,
             Statement::Raise(s) => s.range,
             Statement::Assert(s) => s.range,
@@ -69,16 +63,7 @@ pub struct FunctionDef<'ast> {
     pub body: &'ast [Statement<'ast>],
     pub decorators: &'ast [Expression<'ast>],
     pub returns: Option<Expression<'ast>>,
-    pub range: TextRange,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AsyncFunctionDef<'ast> {
-    pub name: Identifier<'ast>,
-    pub params: &'ast Parameters<'ast>,
-    pub body: &'ast [Statement<'ast>],
-    pub decorators: &'ast [Expression<'ast>],
-    pub returns: Option<Expression<'ast>>,
+    pub is_async: bool,
     pub range: TextRange,
 }
 
@@ -163,15 +148,7 @@ pub struct ForStmt<'ast> {
     pub iter: Expression<'ast>,
     pub body: &'ast [Statement<'ast>],
     pub orelse: &'ast [Statement<'ast>],
-    pub range: TextRange,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AsyncForStmt<'ast> {
-    pub target: Expression<'ast>,
-    pub iter: Expression<'ast>,
-    pub body: &'ast [Statement<'ast>],
-    pub orelse: &'ast [Statement<'ast>],
+    pub is_async: bool,
     pub range: TextRange,
 }
 
@@ -187,6 +164,7 @@ pub struct WhileStmt<'ast> {
 pub struct WithStmt<'ast> {
     pub items: &'ast [WithItem<'ast>],
     pub body: &'ast [Statement<'ast>],
+    pub is_async: bool,
     pub range: TextRange,
 }
 
@@ -194,13 +172,6 @@ pub struct WithStmt<'ast> {
 pub struct WithItem<'ast> {
     pub context_expr: Expression<'ast>,
     pub optional_vars: Option<Expression<'ast>>,
-    pub range: TextRange,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct AsyncWithStmt<'ast> {
-    pub items: &'ast [WithItem<'ast>],
-    pub body: &'ast [Statement<'ast>],
     pub range: TextRange,
 }
 

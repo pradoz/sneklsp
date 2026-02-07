@@ -334,7 +334,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     fn parse_stmt(&mut self) -> ParseResult<Statement<'ast>> {
         match self.current.kind {
             TokenKind::At => self.parse_decorated(),
-            TokenKind::Def => self.parse_func_def(self.empty_slice()),
+            TokenKind::Def => self.parse_func_def(false, self.start(), self.empty_slice()),
             TokenKind::Async => self.parse_async_stmt(),
             TokenKind::Class => self.parse_class_def(self.empty_slice()),
             TokenKind::If => self.parse_if(),
@@ -404,10 +404,10 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
         let decorators = self.arena.alloc_slice(decs);
         match self.current.kind {
-            TokenKind::Def => self.parse_func_def(decorators),
+            TokenKind::Def => self.parse_func_def(false, start, decorators),
             TokenKind::Async => {
                 self.advance();
-                self.parse_async_func_def(start, decorators)
+                self.parse_func_def(true, start, decorators)
             }
             TokenKind::Class => self.parse_class_def(decorators),
             _ => Err(self.err("def or class")),
@@ -418,7 +418,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let start = self.start();
         self.expect(TokenKind::Async)?;
         match self.current.kind {
-            TokenKind::Def => self.parse_async_func_def(start, self.empty_slice()),
+            TokenKind::Def => self.parse_func_def(true, start, self.empty_slice()),
             TokenKind::For => self.parse_for(true, start),
             TokenKind::With => self.parse_with(true, start),
             _ => Err(self.err("def, for, or with")),
@@ -427,9 +427,10 @@ impl<'src, 'ast> Parser<'src, 'ast> {
 
     fn parse_func_def(
         &mut self,
+        is_async: bool,
+        start: TextSize,
         decorators: &'ast [Expression<'ast>],
     ) -> ParseResult<Statement<'ast>> {
-        let start = self.start();
         self.expect(TokenKind::Def)?;
         let (name, params, returns, body) = self.func_sig_and_body()?;
         Ok(Statement::FunctionDef(self.arena.alloc(FunctionDef {
@@ -438,27 +439,9 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             body,
             decorators,
             returns,
+            is_async,
             range: self.range(start),
         })))
-    }
-
-    fn parse_async_func_def(
-        &mut self,
-        start: TextSize,
-        decorators: &'ast [Expression<'ast>],
-    ) -> ParseResult<Statement<'ast>> {
-        self.expect(TokenKind::Def)?;
-        let (name, params, returns, body) = self.func_sig_and_body()?;
-        Ok(Statement::AsyncFunctionDef(self.arena.alloc(
-            AsyncFunctionDef {
-                name,
-                params,
-                body,
-                decorators,
-                returns,
-                range: self.range(start),
-            },
-        )))
     }
 
     fn func_sig_and_body(
@@ -680,24 +663,14 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         self.expect(TokenKind::Colon)?;
         let body = self.parse_block()?;
         let orelse = self.parse_else()?;
-        let range = self.range(start);
-        if is_async {
-            Ok(Statement::AsyncFor(self.arena.alloc(AsyncForStmt {
-                target,
-                iter,
-                body,
-                orelse,
-                range,
-            })))
-        } else {
-            Ok(Statement::For(self.arena.alloc(ForStmt {
-                target,
-                iter,
-                body,
-                orelse,
-                range,
-            })))
-        }
+        Ok(Statement::For(self.arena.alloc(ForStmt {
+            target,
+            iter,
+            body,
+            orelse,
+            is_async,
+            range: self.range(start),
+        })))
     }
 
     fn parse_while(&mut self) -> ParseResult<Statement<'ast>> {
@@ -781,20 +754,12 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         self.expect(TokenKind::Colon)?;
         let body = self.parse_block()?;
         let items = self.arena.alloc_slice(items);
-        let range = self.range(start);
-        if is_async {
-            Ok(Statement::AsyncWith(self.arena.alloc(AsyncWithStmt {
-                items,
-                body,
-                range,
-            })))
-        } else {
-            Ok(Statement::With(self.arena.alloc(WithStmt {
-                items,
-                body,
-                range,
-            })))
-        }
+        Ok(Statement::With(self.arena.alloc(WithStmt {
+            items,
+            body,
+            is_async,
+            range: self.range(start),
+        })))
     }
 
     fn parse_return(&mut self) -> ParseResult<Statement<'ast>> {
