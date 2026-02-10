@@ -171,7 +171,11 @@ pub fn file_exported_symbols(db: &dyn salsa::Database, file: File) -> Vec<Export
 }
 
 #[salsa::tracked]
-pub fn resolve_module(db: &dyn salsa::Database, graph: ModuleGraph, name: crate::ModuleName<'_>) -> Option<File> {
+pub fn resolve_module(
+    db: &dyn salsa::Database,
+    graph: ModuleGraph,
+    name: crate::ModuleName<'_>,
+) -> Option<File> {
     let target = name.name(db);
     graph
         .entries(db)

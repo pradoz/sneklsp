@@ -7,7 +7,6 @@ use sneklsp_text::{LineIndex, TextRange, TextSize};
 pub struct EditRecord {
     pub range: TextRange,
     pub new_len: TextSize,
-    pub old_content: String,
 }
 
 #[derive(Debug)]
@@ -77,12 +76,9 @@ impl Document {
 
                     // bounds check
                     if start_usize <= end_usize && end_usize <= self.content.len() {
-                        let old_content = self.content[start_usize..end_usize].to_string();
-
                         self.pending_edits.push(EditRecord {
                             range: TextRange::new(start, end),
                             new_len: TextSize::new(change.text.len() as u32),
-                            old_content,
                         });
 
                         self.content
@@ -108,16 +104,6 @@ impl Document {
         self.pending_edits.clear();
         self.tokens.clear();
         self.index = None;
-    }
-
-    #[inline]
-    pub fn take_edits(&mut self) -> Vec<EditRecord> {
-        std::mem::take(&mut self.pending_edits)
-    }
-
-    #[inline]
-    pub fn has_tokens(&self) -> bool {
-        !self.tokens.is_empty()
     }
 
     pub fn set_tokens(&mut self, tokens: Vec<Token>) {

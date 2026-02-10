@@ -23,7 +23,7 @@ impl Debouncer {
         }
     }
 
-    #[inline]
+    #[cfg(test)]
     pub fn with_delay_ms(ms: u64) -> Self {
         Self {
             pending: HashMap::new(),

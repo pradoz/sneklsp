@@ -117,6 +117,13 @@ impl Workspace {
         self.module_map.get(module_name).copied()
     }
 
+    pub fn resolve_module_name(&self, file_id: FileId) -> Option<String> {
+        self.module_map
+            .iter()
+            .find(|(_, id)| **id == file_id)
+            .map(|(name, _)| name.clone())
+    }
+
     pub fn file_id_for_uri(&mut self, uri: &lsp_types::Uri) -> Option<FileId> {
         let path = VfsPath::from_uri(uri)?;
         Some(self.vfs.intern_path(path))

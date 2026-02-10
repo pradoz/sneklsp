@@ -196,14 +196,34 @@ impl Server {
 
     fn drain_workspace_index(&mut self) {
         let done = if let Some(ref rx) = self.workspace_index_rx {
-            // drain without blocking — process whatever is ready
+            // drain without blocking, process whatever is ready
             let mut count = 0;
             while let Ok((file_id, state)) = rx.try_recv() {
                 self.workspace.set_file_state(file_id, state);
+
+                let vfs_path = self.workspace.vfs.file_path(file_id);
+                let path_str = vfs_path.as_path().display().to_string();
+
+                if let Some(content) = self.workspace.vfs.read(file_id) {
+                    if let Some(module_name) = self.workspace.resolve_module_name(file_id) {
+                        self.analysis.queue_module(
+                            file_id,
+                            module_name,
+                            path_str,
+                            content.to_string(),
+                        );
+                    } else {
+                        self.analysis
+                            .set_file_content(file_id, &path_str, content.to_string());
+                    }
+                }
+
                 count += 1;
             }
 
             if count > 0 {
+                // flush queued modules in one batch
+                self.analysis.flush_modules();
                 tracing::debug!(count, "drained workspace index results");
             }
 
@@ -217,6 +237,7 @@ impl Server {
             self.workspace_index_rx = None;
         }
     }
+
     fn run(&mut self) -> Result<()> {
         tracing::info!("server main loop starting");
 
@@ -317,6 +338,7 @@ impl Server {
                 diagnostics.extend(crate::diagnostics::semantic_diagnostics(
                     idx,
                     &analysis.line_index,
+                    &self.analysis,
                 ));
             }
             self.send_diagnostics(&uri, diagnostics);
@@ -384,7 +406,11 @@ impl Server {
         let mut diagnostics = parse_diagnostics(&errors, &line_index);
         if let Some(state) = self.documents.get(&uri) {
             if let Some(index) = state.document.index.as_ref() {
-                diagnostics.extend(semantic_diagnostics(index, &state.document.line_index));
+                diagnostics.extend(semantic_diagnostics(
+                    index,
+                    &state.document.line_index,
+                    &self.analysis,
+                ));
             }
         }
 
@@ -403,7 +429,7 @@ impl Server {
 
             Completion::METHOD => {
                 let (id, params) = cast_request::<Completion>(req)?;
-                let result = handlers::handle_completion(params, &self.documents);
+                let result = handlers::handle_completion(params, &self.documents, &self.analysis);
                 self.send_response(id, result);
             }
 
@@ -415,8 +441,12 @@ impl Server {
 
             GotoDefinition::METHOD => {
                 let (id, params) = cast_request::<GotoDefinition>(req)?;
-                let result =
-                    handlers::handle_goto_definition(params, &self.documents, &self.workspace);
+                let result = handlers::handle_goto_definition(
+                    params,
+                    &self.documents,
+                    &self.workspace,
+                    &self.analysis,
+                );
                 self.send_response(id, result);
             }
 

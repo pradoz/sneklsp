@@ -8,6 +8,7 @@ pub use queries::{
     file_exported_symbols, file_index, file_line_index, file_tokens, parse_file,
     parse_file_recovering, resolve_module,
 };
+pub use types::{Ty, infer_symbol_type};
 
 #[salsa::db]
 #[derive(Default)]

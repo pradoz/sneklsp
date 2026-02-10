@@ -10,6 +10,7 @@ use lsp_types::{
 };
 use std::collections::{HashMap, HashSet};
 
+use crate::analysis::AnalysisHost;
 use crate::builtins::{BUILTINS, BuiltinInfo};
 use crate::server::DocumentState;
 use sneklsp_index::{OwnedIndex, ScopeData, SymbolData};
@@ -596,6 +597,7 @@ pub fn handle_goto_definition(
     params: GotoDefinitionParams,
     documents: &HashMap<Uri, DocumentState>,
     workspace: &Workspace,
+    analysis: &AnalysisHost,
 ) -> Option<GotoDefinitionResponse> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -609,6 +611,9 @@ pub fn handle_goto_definition(
         symbol.kind,
         sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
     ) {
+        if let Some(location) = resolve_import_via_salsa(symbol, query.index, analysis) {
+            return Some(GotoDefinitionResponse::Scalar(location));
+        }
         if let Some(location) = resolve_import_definition(symbol, query.index, workspace) {
             return Some(GotoDefinitionResponse::Scalar(location));
         }
@@ -617,6 +622,60 @@ pub fn handle_goto_definition(
     Some(GotoDefinitionResponse::Scalar(
         query.location(symbol.selection_range),
     ))
+}
+
+fn resolve_import_via_salsa(
+    symbol: &SymbolData,
+    index: &OwnedIndex,
+    analysis: &AnalysisHost,
+) -> Option<Location> {
+    let name = index.symbol_name(symbol);
+
+    if symbol.kind == sneklsp_index::SymbolKind::Import {
+        let target_file = analysis.resolve_module_file(name)?;
+        let path = target_file.path(analysis.db());
+        let target_uri: Uri = format!("file://{}", path).parse().ok()?;
+
+        return Some(Location {
+            uri: target_uri,
+            range: Range {
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
+                end: Position {
+                    line: 0,
+                    character: 0,
+                },
+            },
+        });
+    }
+
+    if symbol.kind == sneklsp_index::SymbolKind::ImportedSymbol {
+        // search all modules for this exported symbol
+        for file_id in analysis.file_ids() {
+            let Some(exports) = analysis.exported_symbols(file_id) else {
+                continue;
+            };
+
+            for export in exports {
+                if export.name == name {
+                    let target_file_salsa = analysis.file_for_id(file_id)?;
+                    let path = target_file_salsa.path(analysis.db());
+                    let target_uri: Uri = format!("file://{}", path).parse().ok()?;
+                    let line_index = analysis.line_index(file_id)?;
+                    let range = to_lsp_range(export.range, line_index);
+
+                    return Some(Location {
+                        uri: target_uri,
+                        range,
+                    });
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn resolve_import_definition(
@@ -751,11 +810,16 @@ fn format_symbol_signature(symbol: &SymbolData, index: &OwnedIndex) -> String {
         return sig.to_string();
     }
 
-    // fallback for symbols without signature ranges
     let name = index.symbol_name(symbol);
     match symbol.kind {
-        sneklsp_index::SymbolKind::Variable => name.to_string(),
-        sneklsp_index::SymbolKind::Parameter => name.to_string(),
+        sneklsp_index::SymbolKind::Variable | sneklsp_index::SymbolKind::Parameter => {
+            let ty = sneklsp_db::infer_symbol_type(index, symbol);
+            if ty.is_unknown() {
+                name.to_string()
+            } else {
+                format!("{}: {}", name, ty.display())
+            }
+        }
         sneklsp_index::SymbolKind::Import => format!("import {}", name),
         sneklsp_index::SymbolKind::ImportedSymbol => format!("from ... import {}", name),
         sneklsp_index::SymbolKind::Property => format!("@property\n{}", name),
@@ -1103,6 +1167,7 @@ fn line_range_for_symbol(symbol: &SymbolData, line_index: &LineIndex) -> Range {
 pub fn handle_completion(
     params: CompletionParams,
     documents: &HashMap<Uri, DocumentState>,
+    analysis: &AnalysisHost,
 ) -> Option<CompletionResponse> {
     let uri = params.text_document_position.text_document.uri;
     let pos = params.text_document_position.position;
@@ -1117,13 +1182,36 @@ pub fn handle_completion(
     let scope = query.index.scope_at(offset);
     let scope_id = scope.map(|s| s.id);
     collect_visible_symbols(query.index, scope_id, &mut seen, &mut items);
-
+    collect_cross_file_completions(analysis, &mut seen, &mut items);
     add_builtin_completions(&mut seen, &mut items);
 
     if items.is_empty() {
         None
     } else {
         Some(CompletionResponse::Array(items))
+    }
+}
+
+fn collect_cross_file_completions(
+    analysis: &AnalysisHost,
+    seen: &mut HashSet<String>,
+    items: &mut Vec<CompletionItem>,
+) {
+    for file_id in analysis.file_ids() {
+        let Some(exports) = analysis.exported_symbols(file_id) else {
+            continue;
+        };
+
+        for export in exports {
+            if seen.insert(export.name.clone()) {
+                items.push(CompletionItem {
+                    label: export.name.clone(),
+                    kind: Some(to_lsp_completion_kind(export.kind)),
+                    detail: Some("(workspace)".to_string()),
+                    ..Default::default()
+                });
+            }
+        }
     }
 }
 

@@ -1,59 +1,30 @@
 use rustc_hash::FxHashMap;
-use std::thread;
-
-use crossbeam_channel::{Receiver, Sender, bounded};
-use lsp_types::Uri;
 use salsa::Setter;
 
-use sneklsp_db::{Database, File, FileAnalysis, file_line_index, parse_file_recovering};
+use sneklsp_db::{
+    Database, ExportedSymbol, File, FileAnalysis, ModuleEntry, ModuleGraph, ModuleName,
+    file_exported_symbols, file_line_index, parse_file_recovering, resolve_module,
+};
 use sneklsp_text::LineIndex;
 use sneklsp_vfs::FileId;
-
-#[derive(Debug)]
-pub struct AnalysisRequest {
-    pub uri: Uri,
-    pub file_id: FileId,
-    pub version: i32,
-}
-
-pub struct AnalysisResult {
-    pub uri: Uri,
-    pub file_id: FileId,
-    pub version: i32,
-    pub analysis: FileAnalysis,
-}
 
 pub struct AnalysisHost {
     db: Database,
     file_map: FxHashMap<FileId, File>,
-    request_tx: Sender<AnalysisRequest>,
-    result_rx: Receiver<AnalysisResult>,
-    _handle: thread::JoinHandle<()>,
+    module_graph: Option<ModuleGraph>,
+    module_entries: Vec<ModuleEntry>,
+    // (file_id, module_name, path, content)
+    pending_modules: Vec<(FileId, String, String, String)>,
 }
 
 impl AnalysisHost {
     pub fn new() -> Self {
-        let (request_tx, request_rx) = bounded::<AnalysisRequest>(16);
-        let (result_tx, result_rx) = bounded::<AnalysisResult>(16);
-
-        // TODO: handle when the main thread will call analyze_sync and post results
-        let handle = thread::Builder::new()
-            .name("sneklsp-analysis".to_string())
-            .spawn(move || {
-                tracing::info!("analysis thread started");
-                while let Ok(_req) = request_rx.recv() {
-                    // queries run asynchronously on snapshot
-                }
-                tracing::info!("analysis thread shutting down");
-            })
-            .expect("failed to spawn analysis thread");
-
         Self {
             db: Database::default(),
             file_map: FxHashMap::default(),
-            request_tx,
-            result_rx,
-            _handle: handle,
+            module_graph: None,
+            module_entries: Vec::new(),
+            pending_modules: Vec::new(),
         }
     }
 
@@ -66,9 +37,70 @@ impl AnalysisHost {
         }
     }
 
+    pub fn queue_module(
+        &mut self,
+        file_id: FileId,
+        module_name: String,
+        path: String,
+        content: String,
+    ) {
+        self.pending_modules
+            .push((file_id, module_name, path, content));
+    }
+
+    pub fn flush_modules(&mut self) {
+        if self.pending_modules.is_empty() {
+            return;
+        }
+
+        let pending = std::mem::take(&mut self.pending_modules);
+        for (file_id, module_name, path, content) in pending {
+            let file = if let Some(&existing) = self.file_map.get(&file_id) {
+                existing.set_content(&mut self.db).to(content);
+                existing
+            } else {
+                let file = File::new(&self.db, path, content);
+                self.file_map.insert(file_id, file);
+                file
+            };
+
+            self.module_entries.retain(|e| e.name != module_name);
+            self.module_entries.push(ModuleEntry {
+                name: module_name,
+                file,
+            });
+        }
+
+        let entries = self.module_entries.clone();
+        if let Some(graph) = self.module_graph {
+            graph.set_entries(&mut self.db).to(entries);
+        } else {
+            self.module_graph = Some(ModuleGraph::new(&self.db, entries));
+        }
+    }
+
+    pub fn resolve_module_file(&self, module_name: &str) -> Option<File> {
+        let graph = self.module_graph?;
+        let interned = ModuleName::new(&self.db, module_name.to_string());
+        resolve_module(&self.db, graph, interned)
+    }
+
+    pub fn exported_symbols(&self, file_id: FileId) -> Option<&[ExportedSymbol]> {
+        let file = self.file_map.get(&file_id)?;
+        Some(file_exported_symbols(&self.db, *file))
+    }
+
     pub fn analyze_file(&self, file_id: FileId) -> Option<&FileAnalysis> {
         let file = self.file_map.get(&file_id)?;
         Some(parse_file_recovering(&self.db, *file))
+    }
+
+    pub fn file_ids(&self) -> impl Iterator<Item = FileId> + '_ {
+        self.file_map.keys().copied()
+    }
+
+    pub fn file_for_id(&self, file_id: FileId) -> Option<File> {
+        self.file_map.get(&file_id).copied()
     }
 
     pub fn line_index(&self, file_id: FileId) -> Option<&LineIndex> {
@@ -77,18 +109,8 @@ impl AnalysisHost {
     }
 
     #[inline]
-    pub fn has_file(&self, file_id: FileId) -> bool {
-        self.file_map.contains_key(&file_id)
-    }
-
-    #[inline]
     pub fn db(&self) -> &Database {
         &self.db
-    }
-
-    #[inline]
-    pub fn results(&self) -> &Receiver<AnalysisResult> {
-        &self.result_rx
     }
 }
 
