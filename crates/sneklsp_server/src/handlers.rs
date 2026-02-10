@@ -15,6 +15,7 @@ use crate::builtins::{BUILTINS, BuiltinInfo};
 use crate::server::DocumentState;
 use sneklsp_index::{OwnedIndex, ScopeData, SymbolData};
 use sneklsp_text::{LineIndex, TextRange, TextSize};
+use sneklsp_vfs::FileId;
 use sneklsp_workspace::{ImportResolver, Workspace};
 
 #[inline]
@@ -860,6 +861,8 @@ pub fn handle_references(
 pub fn handle_rename(
     params: RenameParams,
     documents: &HashMap<Uri, DocumentState>,
+    analysis: &AnalysisHost,
+    workspace: &Workspace,
 ) -> Option<WorkspaceEdit> {
     let uri = params.text_document_position.text_document.uri;
     let pos = params.text_document_position.position;
@@ -869,8 +872,10 @@ pub fn handle_rename(
     let offset = from_lsp_position(pos, query.line_index)?;
 
     let symbol = query.find_symbol_at(offset)?;
+    let symbol_name = query.index.symbol_name(symbol).to_string();
 
-    let edits: Vec<TextEdit> = query
+    // current file
+    let local_edits: Vec<TextEdit> = query
         .all_occurrence_ranges(symbol.id)
         .into_iter()
         .map(|range| TextEdit {
@@ -879,18 +884,118 @@ pub fn handle_rename(
         })
         .collect();
 
-    if edits.is_empty() {
+    if local_edits.is_empty() {
         return None;
     }
 
-    let mut changes = HashMap::new();
-    changes.insert(uri, edits);
+    let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
+    changes.insert(uri.clone(), local_edits);
+
+    // cross-file
+    find_cross_file_edits(
+        &symbol_name,
+        &new_name,
+        &uri,
+        analysis,
+        workspace,
+        documents,
+        &mut changes,
+    );
 
     Some(WorkspaceEdit {
         changes: Some(changes),
         document_changes: None,
         change_annotations: None,
     })
+}
+
+fn find_cross_file_edits(
+    symbol_name: &str,
+    new_name: &str,
+    origin_uri: &Uri,
+    analysis: &AnalysisHost,
+    workspace: &Workspace,
+    documents: &HashMap<Uri, DocumentState>,
+    changes: &mut HashMap<Uri, Vec<TextEdit>>,
+) {
+    for file_id in analysis.file_ids() {
+        let vfs_path = workspace.vfs.file_path(file_id);
+        let Some(file_uri) = vfs_path.to_uri() else {
+            continue;
+        };
+
+        if file_uri == *origin_uri {
+            continue;
+        }
+
+        let edits = collect_edits_in_file(
+            file_id,
+            symbol_name,
+            new_name,
+            &file_uri,
+            workspace,
+            documents,
+        );
+
+        if !edits.is_empty() {
+            changes.insert(file_uri, edits);
+        }
+    }
+}
+
+fn collect_edits_in_file(
+    file_id: FileId,
+    symbol_name: &str,
+    new_name: &str,
+    file_uri: &Uri,
+    workspace: &Workspace,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Vec<TextEdit> {
+    // try open document first, then workspace state, then salsa
+    let (index, line_index) = if let Some(state) = documents.get(file_uri) {
+        match (state.document.index.as_ref(), &state.document.line_index) {
+            (Some(idx), li) => (idx, li),
+            _ => return Vec::new(),
+        }
+    } else if let Some(state) = workspace.get_file_state(file_id) {
+        match state.index.as_ref() {
+            Some(idx) => (idx, &state.line_index),
+            None => return Vec::new(),
+        }
+    } else {
+        return Vec::new();
+    };
+
+    let mut edits = Vec::new();
+
+    for symbol in index.symbols() {
+        if !matches!(
+            symbol.kind,
+            sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
+        ) {
+            continue;
+        }
+
+        if index.symbol_name(symbol) != symbol_name {
+            continue;
+        }
+
+        // rename the import binding itself
+        edits.push(TextEdit {
+            range: to_lsp_range(symbol.selection_range, line_index),
+            new_text: new_name.to_string(),
+        });
+
+        // rename all references to this import in the file
+        for reference in index.references_to(symbol.id) {
+            edits.push(TextEdit {
+                range: to_lsp_range(reference.range, line_index),
+                new_text: new_name.to_string(),
+            });
+        }
+    }
+
+    edits
 }
 
 enum CallTarget<'a> {
@@ -927,6 +1032,31 @@ pub fn handle_selection_range(
     }
 
     Some(results)
+}
+
+pub fn handle_prepare_rename(
+    params: lsp_types::TextDocumentPositionParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<lsp_types::PrepareRenameResponse> {
+    let uri = params.text_document.uri;
+    let pos = params.position;
+
+    let query = get_document_query(&uri, documents)?;
+    let offset = from_lsp_position(pos, query.line_index)?;
+
+    let symbol = query.find_symbol_at(offset)?;
+    let name = query.index.symbol_name(symbol);
+
+    if crate::builtins::lookup(name).is_some() {
+        return None;
+    }
+
+    let range = to_lsp_range(symbol.selection_range, query.line_index);
+
+    Some(lsp_types::PrepareRenameResponse::RangeWithPlaceholder {
+        range,
+        placeholder: name.to_string(),
+    })
 }
 
 fn build_selection_range(
@@ -1008,6 +1138,20 @@ pub fn handle_semantic_tokens(
     Some(crate::semantic_tokens::compute_semantic_tokens(
         index,
         &state.document.line_index,
+    ))
+}
+
+pub fn handle_semantic_tokens_range(
+    params: lsp_types::SemanticTokensRangeParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<lsp_types::SemanticTokensResult> {
+    let uri = params.text_document.uri;
+    let state = documents.get(&uri)?;
+    let index = state.document.index.as_ref()?;
+    Some(crate::semantic_tokens::compute_semantic_tokens_range(
+        index,
+        &state.document.line_index,
+        params.range,
     ))
 }
 

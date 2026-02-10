@@ -10,8 +10,9 @@ use lsp_types::notification::{
 };
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
-    FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, References, Rename,
-    Request as _, SelectionRangeRequest, SemanticTokensFullRequest, SignatureHelpRequest,
+    FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, PrepareRenameRequest,
+    References, Rename, Request as _, SelectionRangeRequest, SemanticTokensFullRequest,
+    SemanticTokensRangeRequest, SignatureHelpRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
@@ -62,14 +63,17 @@ pub fn run_server() -> Result<()> {
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         inlay_hint_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
-        rename_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(lsp_types::OneOf::Right(lsp_types::RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: Default::default(),
+        })),
         selection_range_provider: Some(lsp_types::SelectionRangeProviderCapability::Simple(true)),
         semantic_tokens_provider: Some(
             lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
                 lsp_types::SemanticTokensOptions {
                     legend: crate::semantic_tokens::legend(),
                     full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
-                    range: None,
+                    range: Some(true),
                     work_done_progress_options: Default::default(),
                 },
             ),
@@ -496,6 +500,12 @@ impl Server {
                 self.send_response(id, result);
             }
 
+            SemanticTokensRangeRequest::METHOD => {
+                let (id, params) = cast_request::<SemanticTokensRangeRequest>(req)?;
+                let result = handlers::handle_semantic_tokens_range(params, &self.documents);
+                self.send_response(id, result);
+            }
+
             SignatureHelpRequest::METHOD => {
                 let (id, params) = cast_request::<SignatureHelpRequest>(req)?;
                 let result = handlers::handle_signature_help(params, &self.documents);
@@ -504,7 +514,18 @@ impl Server {
 
             Rename::METHOD => {
                 let (id, params) = cast_request::<Rename>(req)?;
-                let result = handlers::handle_rename(params, &self.documents);
+                let result = handlers::handle_rename(
+                    params,
+                    &self.documents,
+                    &self.analysis,
+                    &self.workspace,
+                );
+                self.send_response(id, result);
+            }
+
+            PrepareRenameRequest::METHOD => {
+                let (id, params) = cast_request::<PrepareRenameRequest>(req)?;
+                let result = handlers::handle_prepare_rename(params, &self.documents);
                 self.send_response(id, result);
             }
 
