@@ -11,7 +11,7 @@ use lsp_types::notification::{
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
     FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, References, Rename,
-    Request as _, SelectionRangeRequest, SignatureHelpRequest,
+    Request as _, SelectionRangeRequest, SemanticTokensFullRequest, SignatureHelpRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
@@ -64,6 +64,16 @@ pub fn run_server() -> Result<()> {
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Left(true)),
         selection_range_provider: Some(lsp_types::SelectionRangeProviderCapability::Simple(true)),
+        semantic_tokens_provider: Some(
+            lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
+                lsp_types::SemanticTokensOptions {
+                    legend: crate::semantic_tokens::legend(),
+                    full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
+                    range: None,
+                    work_done_progress_options: Default::default(),
+                },
+            ),
+        ),
         signature_help_provider: Some(lsp_types::SignatureHelpOptions {
             trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
             retrigger_characters: Some(vec![",".to_string()]),
@@ -477,6 +487,12 @@ impl Server {
             SelectionRangeRequest::METHOD => {
                 let (id, params) = cast_request::<SelectionRangeRequest>(req)?;
                 let result = handlers::handle_selection_range(params, &self.documents);
+                self.send_response(id, result);
+            }
+
+            SemanticTokensFullRequest::METHOD => {
+                let (id, params) = cast_request::<SemanticTokensFullRequest>(req)?;
+                let result = handlers::handle_semantic_tokens(params, &self.documents);
                 self.send_response(id, result);
             }
 

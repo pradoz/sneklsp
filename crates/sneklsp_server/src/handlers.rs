@@ -998,6 +998,19 @@ fn build_selection_range(
     })
 }
 
+pub fn handle_semantic_tokens(
+    params: lsp_types::SemanticTokensParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<lsp_types::SemanticTokensResult> {
+    let uri = params.text_document.uri;
+    let state = documents.get(&uri)?;
+    let index = state.document.index.as_ref()?;
+    Some(crate::semantic_tokens::compute_semantic_tokens(
+        index,
+        &state.document.line_index,
+    ))
+}
+
 pub fn handle_signature_help(
     params: SignatureHelpParams,
     documents: &HashMap<Uri, DocumentState>,

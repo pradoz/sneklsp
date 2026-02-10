@@ -1,7 +1,78 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::ModuleIndex;
 use sneklsp_text::TextRange;
+
+/// sorted by start
+struct PositionalIndex {
+    /// (start, end, symbol_index)
+    symbols: Vec<(u32, u32, u32)>,
+    /// (start, end, reference_index)
+    references: Vec<(u32, u32, u32)>,
+    /// (start, end, scope_index) sorted after start by width descending
+    scopes: Vec<(u32, u32, u32)>,
+}
+
+impl PositionalIndex {
+    fn build(symbols: &[SymbolData], references: &[ReferenceData], scopes: &[ScopeData]) -> Self {
+        let mut sym_entries: Vec<(u32, u32, u32)> = symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                (
+                    s.selection_range.start().to_u32(),
+                    s.selection_range.end().to_u32(),
+                    i as u32,
+                )
+            })
+            .collect();
+        sym_entries.sort_unstable_by_key(|e| e.0);
+
+        let mut ref_entries: Vec<(u32, u32, u32)> = references
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (r.range.start().to_u32(), r.range.end().to_u32(), i as u32))
+            .collect();
+        ref_entries.sort_unstable_by_key(|e| e.0);
+
+        let mut scope_entries: Vec<(u32, u32, u32)> = scopes
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.range.start().to_u32(), s.range.end().to_u32(), i as u32))
+            .collect();
+        scope_entries.sort_unstable_by_key(|e| e.0);
+
+        Self {
+            symbols: sym_entries,
+            references: ref_entries,
+            scopes: scope_entries,
+        }
+    }
+
+    #[inline]
+    fn find_innermost(entries: &[(u32, u32, u32)], offset: u32) -> Option<u32> {
+        let start_bound = entries.partition_point(|e| e.0 <= offset);
+        let mut best: Option<(u32, u32)> = None; // (width, index)
+
+        for entry in entries[..start_bound].iter().rev() {
+            if entry.1 <= offset {
+                continue;
+            }
+            // entry.0 <= offset < entry.1 — contains
+            let width = entry.1 - entry.0;
+            match best {
+                Some((bw, _)) if width < bw => best = Some((width, entry.2)),
+                None => best = Some((width, entry.2)),
+                _ => {}
+            }
+            if entry.0 + 1 < offset.saturating_sub(10000) {
+                break;
+            }
+        }
+
+        best.map(|(_, idx)| idx)
+    }
+}
 
 pub struct OwnedIndex {
     inner: Arc<OwnedIndexInner>,
@@ -12,6 +83,7 @@ pub struct OwnedIndexInner {
     symbols: Vec<SymbolData>,
     scopes: Vec<ScopeData>,
     references: Vec<ReferenceData>,
+    positional: OnceLock<PositionalIndex>,
 }
 
 impl Clone for OwnedIndex {
@@ -148,8 +220,20 @@ impl OwnedIndex {
                 symbols,
                 scopes,
                 references,
+                positional: OnceLock::new(),
             }),
         }
+    }
+
+    #[inline]
+    fn positional(&self) -> &PositionalIndex {
+        self.inner.positional.get_or_init(|| {
+            PositionalIndex::build(
+                &self.inner.symbols,
+                &self.inner.references,
+                &self.inner.scopes,
+            )
+        })
     }
 
     #[inline]
@@ -204,24 +288,6 @@ impl OwnedIndex {
         self.inner.scopes.get(id as usize)
     }
 
-    pub fn scope_at(&self, offset: sneklsp_text::TextSize) -> Option<&ScopeData> {
-        let mut best: Option<&ScopeData> = None;
-
-        for scope in &self.inner.scopes {
-            if scope.range.contains(offset) {
-                match best {
-                    Some(b) if scope.range.len().to_u32() < b.range.len().to_u32() => {
-                        best = Some(scope);
-                    }
-                    None => best = Some(scope),
-                    _ => {}
-                }
-            }
-        }
-
-        best
-    }
-
     #[inline]
     pub fn root_scope(&self) -> Option<&ScopeData> {
         self.inner.scopes.first()
@@ -251,17 +317,18 @@ impl OwnedIndex {
     }
 
     pub fn symbol_at(&self, offset: sneklsp_text::TextSize) -> Option<&SymbolData> {
-        self.inner
-            .symbols
-            .iter()
-            .find(|s| s.selection_range.contains(offset))
+        let idx = PositionalIndex::find_innermost(&self.positional().symbols, offset.to_u32())?;
+        self.inner.symbols.get(idx as usize)
+    }
+
+    pub fn scope_at(&self, offset: sneklsp_text::TextSize) -> Option<&ScopeData> {
+        let idx = PositionalIndex::find_innermost(&self.positional().scopes, offset.to_u32())?;
+        self.inner.scopes.get(idx as usize)
     }
 
     pub fn reference_at(&self, offset: sneklsp_text::TextSize) -> Option<&ReferenceData> {
-        self.inner
-            .references
-            .iter()
-            .find(|r| r.range.contains(offset))
+        let idx = PositionalIndex::find_innermost(&self.positional().references, offset.to_u32())?;
+        self.inner.references.get(idx as usize)
     }
 
     pub fn references_to(&self, symbol_id: u32) -> impl Iterator<Item = &ReferenceData> {
