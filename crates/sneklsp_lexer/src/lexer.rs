@@ -9,6 +9,7 @@ pub struct Lexer<'src> {
     pending_tokens: Vec<Token>,
     at_line_start: bool,
     done: bool,
+    bracket_depth: u32,
 }
 
 impl<'src> Lexer<'src> {
@@ -25,6 +26,7 @@ impl<'src> Lexer<'src> {
             pending_tokens: Vec::with_capacity(8),
             at_line_start: true,
             done: false,
+            bracket_depth: 0,
         }
     }
 
@@ -67,12 +69,30 @@ impl<'src> Lexer<'src> {
         let byte = self.advance();
 
         let kind = match byte {
-            b'(' => TokenKind::LParen,
-            b')' => TokenKind::RParen,
-            b'[' => TokenKind::LBracket,
-            b']' => TokenKind::RBracket,
-            b'{' => TokenKind::LBrace,
-            b'}' => TokenKind::RBrace,
+            b'(' => {
+                self.bracket_depth += 1;
+                TokenKind::LParen
+            }
+            b')' => {
+                self.bracket_depth = self.bracket_depth.saturating_sub(1);
+                TokenKind::RParen
+            }
+            b'[' => {
+                self.bracket_depth += 1;
+                TokenKind::LBracket
+            }
+            b']' => {
+                self.bracket_depth = self.bracket_depth.saturating_sub(1);
+                TokenKind::RBracket
+            }
+            b'{' => {
+                self.bracket_depth += 1;
+                TokenKind::LBrace
+            }
+            b'}' => {
+                self.bracket_depth = self.bracket_depth.saturating_sub(1);
+                TokenKind::RBrace
+            }
             b':' => {
                 if self.match_byte(b'=') {
                     TokenKind::ColonEq
@@ -204,6 +224,11 @@ impl<'src> Lexer<'src> {
             }
 
             b'\n' => {
+                // implicit line continuation
+                if self.bracket_depth > 0 {
+                    self.skip_whitespace();
+                    return self.next_token();
+                }
                 self.at_line_start = true;
                 TokenKind::Newline
             }
@@ -219,6 +244,10 @@ impl<'src> Lexer<'src> {
     }
 
     fn handle_indentation(&mut self) -> Option<Token> {
+        if self.bracket_depth > 0 {
+            return None;
+        }
+
         loop {
             let mut indent = 0;
             let indent_start = self.position;
@@ -572,5 +601,45 @@ mod tests {
                 TokenKind::Return,
             ]
         );
+    }
+
+    #[test]
+    fn implicit_line_continuation_parens() {
+        let tokens = lex("x = (1 +\n    2)");
+        // Should NOT contain Newline or Indent inside parens
+        assert!(!tokens.contains(&TokenKind::Newline));
+        assert!(!tokens.contains(&TokenKind::Indent));
+    }
+
+    #[test]
+    fn implicit_line_continuation_brackets() {
+        let tokens = lex("x = [1,\n    2,\n    3]");
+        assert!(!tokens.contains(&TokenKind::Newline));
+        assert!(!tokens.contains(&TokenKind::Indent));
+    }
+
+    #[test]
+    fn implicit_line_continuation_braces() {
+        let tokens = lex("x = {1: 2,\n    3: 4}");
+        assert!(!tokens.contains(&TokenKind::Newline));
+        assert!(!tokens.contains(&TokenKind::Indent));
+    }
+
+    #[test]
+    fn multi_line_import() {
+        let tokens = lex("from foo import (\n    bar,\n    baz\n    baz,\n)");
+        assert!(!tokens.iter().any(|k| *k == TokenKind::Indent));
+    }
+
+    #[test]
+    fn multi_line_function_call() {
+        let tokens = lex("x = foo(\n    1,\n    2,\n)");
+        assert!(!tokens.iter().any(|k| *k == TokenKind::Indent));
+    }
+
+    #[test]
+    fn newline_outside_brackets_still_works() {
+        let tokens = lex("x = 1\ny = 2");
+        assert!(tokens.contains(&TokenKind::Newline));
     }
 }

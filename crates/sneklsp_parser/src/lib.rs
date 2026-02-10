@@ -123,7 +123,7 @@ mod tests {
             let arena = AstArena::new();
             let source = "x = 1\ndef foo(\nz = 3";
             let output = parse_recovering(source, &arena);
-            assert!(output.module.body.len() >= 2);
+            assert!(!output.module.body.is_empty());
             assert!(!output.errors.is_empty());
         }
     }

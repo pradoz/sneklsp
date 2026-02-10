@@ -1,3 +1,19 @@
+# import statements
+import boto3
+from botocore.exceptions import ClientError
+from aws_cdk import (
+    App,
+    aws_events as events,
+)
+
+# environment variables
+NAMESPACE = os.environ["NAMESPACE"]
+REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION"))
+PARTITION = os.environ.get(
+    "AWS_PARTITION",
+    boto3.Session().get_partition_for_region(region_name=REGION),
+)
+
 # basic expressions
 x = 1
 y = 2.5

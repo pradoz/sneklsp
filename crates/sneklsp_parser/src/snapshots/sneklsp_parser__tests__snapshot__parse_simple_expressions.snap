@@ -5,6 +5,507 @@ expression: result
 Ok(
     Module {
         body: [
+            Import(
+                ImportStmt {
+                    names: [
+                        Alias {
+                            name: "boto3",
+                            asname: None,
+                            range: TextRange {
+                                start: TextSize(
+                                    27,
+                                ),
+                                end: TextSize(
+                                    32,
+                                ),
+                            },
+                        },
+                    ],
+                    range: TextRange {
+                        start: TextSize(
+                            20,
+                        ),
+                        end: TextSize(
+                            32,
+                        ),
+                    },
+                },
+            ),
+            ImportFrom(
+                ImportFromStmt {
+                    module: Some(
+                        "botocore.exceptions",
+                    ),
+                    names: [
+                        Alias {
+                            name: "ClientError",
+                            asname: None,
+                            range: TextRange {
+                                start: TextSize(
+                                    65,
+                                ),
+                                end: TextSize(
+                                    76,
+                                ),
+                            },
+                        },
+                    ],
+                    level: 0,
+                    range: TextRange {
+                        start: TextSize(
+                            33,
+                        ),
+                        end: TextSize(
+                            76,
+                        ),
+                    },
+                },
+            ),
+            ImportFrom(
+                ImportFromStmt {
+                    module: Some(
+                        "aws_cdk",
+                    ),
+                    names: [
+                        Alias {
+                            name: "App",
+                            asname: None,
+                            range: TextRange {
+                                start: TextSize(
+                                    103,
+                                ),
+                                end: TextSize(
+                                    106,
+                                ),
+                            },
+                        },
+                        Alias {
+                            name: "aws_events",
+                            asname: Some(
+                                "events",
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    112,
+                                ),
+                                end: TextSize(
+                                    132,
+                                ),
+                            },
+                        },
+                    ],
+                    level: 0,
+                    range: TextRange {
+                        start: TextSize(
+                            77,
+                        ),
+                        end: TextSize(
+                            135,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "NAMESPACE",
+                                range: TextRange {
+                                    start: TextSize(
+                                        161,
+                                    ),
+                                    end: TextSize(
+                                        170,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Subscript(
+                        SubscriptExpr {
+                            value: Attribute(
+                                AttributeExpr {
+                                    value: Name(
+                                        NameExpr {
+                                            id: "os",
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    173,
+                                                ),
+                                                end: TextSize(
+                                                    175,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                    attr: "environ",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            173,
+                                        ),
+                                        end: TextSize(
+                                            183,
+                                        ),
+                                    },
+                                },
+                            ),
+                            slice: String(
+                                StringExpr {
+                                    value: "NAMESPACE",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            184,
+                                        ),
+                                        end: TextSize(
+                                            195,
+                                        ),
+                                    },
+                                },
+                            ),
+                            range: TextRange {
+                                start: TextSize(
+                                    173,
+                                ),
+                                end: TextSize(
+                                    196,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            161,
+                        ),
+                        end: TextSize(
+                            196,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "REGION",
+                                range: TextRange {
+                                    start: TextSize(
+                                        197,
+                                    ),
+                                    end: TextSize(
+                                        203,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Call(
+                        CallExpr {
+                            func: Attribute(
+                                AttributeExpr {
+                                    value: Name(
+                                        NameExpr {
+                                            id: "os",
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    206,
+                                                ),
+                                                end: TextSize(
+                                                    208,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                    attr: "getenv",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            206,
+                                        ),
+                                        end: TextSize(
+                                            215,
+                                        ),
+                                    },
+                                },
+                            ),
+                            args: [
+                                String(
+                                    StringExpr {
+                                        value: "AWS_REGION",
+                                        range: TextRange {
+                                            start: TextSize(
+                                                216,
+                                            ),
+                                            end: TextSize(
+                                                228,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                Call(
+                                    CallExpr {
+                                        func: Attribute(
+                                            AttributeExpr {
+                                                value: Name(
+                                                    NameExpr {
+                                                        id: "os",
+                                                        range: TextRange {
+                                                            start: TextSize(
+                                                                230,
+                                                            ),
+                                                            end: TextSize(
+                                                                232,
+                                                            ),
+                                                        },
+                                                    },
+                                                ),
+                                                attr: "getenv",
+                                                range: TextRange {
+                                                    start: TextSize(
+                                                        230,
+                                                    ),
+                                                    end: TextSize(
+                                                        239,
+                                                    ),
+                                                },
+                                            },
+                                        ),
+                                        args: [
+                                            String(
+                                                StringExpr {
+                                                    value: "AWS_DEFAULT_REGION",
+                                                    range: TextRange {
+                                                        start: TextSize(
+                                                            240,
+                                                        ),
+                                                        end: TextSize(
+                                                            260,
+                                                        ),
+                                                    },
+                                                },
+                                            ),
+                                        ],
+                                        keywords: [],
+                                        range: TextRange {
+                                            start: TextSize(
+                                                230,
+                                            ),
+                                            end: TextSize(
+                                                261,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            keywords: [],
+                            range: TextRange {
+                                start: TextSize(
+                                    206,
+                                ),
+                                end: TextSize(
+                                    262,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            197,
+                        ),
+                        end: TextSize(
+                            262,
+                        ),
+                    },
+                },
+            ),
+            Assign(
+                AssignStmt {
+                    targets: [
+                        Name(
+                            NameExpr {
+                                id: "PARTITION",
+                                range: TextRange {
+                                    start: TextSize(
+                                        263,
+                                    ),
+                                    end: TextSize(
+                                        272,
+                                    ),
+                                },
+                            },
+                        ),
+                    ],
+                    value: Call(
+                        CallExpr {
+                            func: Attribute(
+                                AttributeExpr {
+                                    value: Attribute(
+                                        AttributeExpr {
+                                            value: Name(
+                                                NameExpr {
+                                                    id: "os",
+                                                    range: TextRange {
+                                                        start: TextSize(
+                                                            275,
+                                                        ),
+                                                        end: TextSize(
+                                                            277,
+                                                        ),
+                                                    },
+                                                },
+                                            ),
+                                            attr: "environ",
+                                            range: TextRange {
+                                                start: TextSize(
+                                                    275,
+                                                ),
+                                                end: TextSize(
+                                                    285,
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                    attr: "get",
+                                    range: TextRange {
+                                        start: TextSize(
+                                            275,
+                                        ),
+                                        end: TextSize(
+                                            289,
+                                        ),
+                                    },
+                                },
+                            ),
+                            args: [
+                                String(
+                                    StringExpr {
+                                        value: "AWS_PARTITION",
+                                        range: TextRange {
+                                            start: TextSize(
+                                                295,
+                                            ),
+                                            end: TextSize(
+                                                310,
+                                            ),
+                                        },
+                                    },
+                                ),
+                                Call(
+                                    CallExpr {
+                                        func: Attribute(
+                                            AttributeExpr {
+                                                value: Call(
+                                                    CallExpr {
+                                                        func: Attribute(
+                                                            AttributeExpr {
+                                                                value: Name(
+                                                                    NameExpr {
+                                                                        id: "boto3",
+                                                                        range: TextRange {
+                                                                            start: TextSize(
+                                                                                316,
+                                                                            ),
+                                                                            end: TextSize(
+                                                                                321,
+                                                                            ),
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                attr: "Session",
+                                                                range: TextRange {
+                                                                    start: TextSize(
+                                                                        316,
+                                                                    ),
+                                                                    end: TextSize(
+                                                                        329,
+                                                                    ),
+                                                                },
+                                                            },
+                                                        ),
+                                                        args: [],
+                                                        keywords: [],
+                                                        range: TextRange {
+                                                            start: TextSize(
+                                                                316,
+                                                            ),
+                                                            end: TextSize(
+                                                                331,
+                                                            ),
+                                                        },
+                                                    },
+                                                ),
+                                                attr: "get_partition_for_region",
+                                                range: TextRange {
+                                                    start: TextSize(
+                                                        316,
+                                                    ),
+                                                    end: TextSize(
+                                                        356,
+                                                    ),
+                                                },
+                                            },
+                                        ),
+                                        args: [],
+                                        keywords: [
+                                            Keyword {
+                                                arg: Some(
+                                                    "region_name",
+                                                ),
+                                                value: Name(
+                                                    NameExpr {
+                                                        id: "REGION",
+                                                        range: TextRange {
+                                                            start: TextSize(
+                                                                369,
+                                                            ),
+                                                            end: TextSize(
+                                                                375,
+                                                            ),
+                                                        },
+                                                    },
+                                                ),
+                                                range: TextRange {
+                                                    start: TextSize(
+                                                        357,
+                                                    ),
+                                                    end: TextSize(
+                                                        375,
+                                                    ),
+                                                },
+                                            },
+                                        ],
+                                        range: TextRange {
+                                            start: TextSize(
+                                                316,
+                                            ),
+                                            end: TextSize(
+                                                376,
+                                            ),
+                                        },
+                                    },
+                                ),
+                            ],
+                            keywords: [],
+                            range: TextRange {
+                                start: TextSize(
+                                    275,
+                                ),
+                                end: TextSize(
+                                    379,
+                                ),
+                            },
+                        },
+                    ),
+                    range: TextRange {
+                        start: TextSize(
+                            263,
+                        ),
+                        end: TextSize(
+                            379,
+                        ),
+                    },
+                },
+            ),
             Assign(
                 AssignStmt {
                     targets: [
@@ -13,10 +514,10 @@ Ok(
                                 id: "x",
                                 range: TextRange {
                                     start: TextSize(
-                                        20,
+                                        401,
                                     ),
                                     end: TextSize(
-                                        21,
+                                        402,
                                     ),
                                 },
                             },
@@ -27,20 +528,20 @@ Ok(
                             value: 1,
                             range: TextRange {
                                 start: TextSize(
-                                    24,
+                                    405,
                                 ),
                                 end: TextSize(
-                                    25,
+                                    406,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            20,
+                            401,
                         ),
                         end: TextSize(
-                            25,
+                            406,
                         ),
                     },
                 },
@@ -53,10 +554,10 @@ Ok(
                                 id: "y",
                                 range: TextRange {
                                     start: TextSize(
-                                        26,
+                                        407,
                                     ),
                                     end: TextSize(
-                                        27,
+                                        408,
                                     ),
                                 },
                             },
@@ -67,20 +568,20 @@ Ok(
                             value: 2.5,
                             range: TextRange {
                                 start: TextSize(
-                                    30,
+                                    411,
                                 ),
                                 end: TextSize(
-                                    33,
+                                    414,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            26,
+                            407,
                         ),
                         end: TextSize(
-                            33,
+                            414,
                         ),
                     },
                 },
@@ -93,10 +594,10 @@ Ok(
                                 id: "z",
                                 range: TextRange {
                                     start: TextSize(
-                                        34,
+                                        415,
                                     ),
                                     end: TextSize(
-                                        35,
+                                        416,
                                     ),
                                 },
                             },
@@ -107,20 +608,20 @@ Ok(
                             value: "hello",
                             range: TextRange {
                                 start: TextSize(
-                                    38,
+                                    419,
                                 ),
                                 end: TextSize(
-                                    45,
+                                    426,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            34,
+                            415,
                         ),
                         end: TextSize(
-                            45,
+                            426,
                         ),
                     },
                 },
@@ -133,10 +634,10 @@ Ok(
                                 id: "a",
                                 range: TextRange {
                                     start: TextSize(
-                                        67,
+                                        448,
                                     ),
                                     end: TextSize(
-                                        68,
+                                        449,
                                     ),
                                 },
                             },
@@ -149,10 +650,10 @@ Ok(
                                     value: 1,
                                     range: TextRange {
                                         start: TextSize(
-                                            71,
+                                            452,
                                         ),
                                         end: TextSize(
-                                            72,
+                                            453,
                                         ),
                                     },
                                 },
@@ -163,30 +664,30 @@ Ok(
                                     value: 2,
                                     range: TextRange {
                                         start: TextSize(
-                                            75,
+                                            456,
                                         ),
                                         end: TextSize(
-                                            76,
+                                            457,
                                         ),
                                     },
                                 },
                             ),
                             range: TextRange {
                                 start: TextSize(
-                                    71,
+                                    452,
                                 ),
                                 end: TextSize(
-                                    76,
+                                    457,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            67,
+                            448,
                         ),
                         end: TextSize(
-                            76,
+                            457,
                         ),
                     },
                 },
@@ -199,10 +700,10 @@ Ok(
                                 id: "b",
                                 range: TextRange {
                                     start: TextSize(
-                                        77,
+                                        458,
                                     ),
                                     end: TextSize(
-                                        78,
+                                        459,
                                     ),
                                 },
                             },
@@ -217,10 +718,10 @@ Ok(
                                             value: 3,
                                             range: TextRange {
                                                 start: TextSize(
-                                                    81,
+                                                    462,
                                                 ),
                                                 end: TextSize(
-                                                    82,
+                                                    463,
                                                 ),
                                             },
                                         },
@@ -231,20 +732,20 @@ Ok(
                                             value: 4,
                                             range: TextRange {
                                                 start: TextSize(
-                                                    85,
+                                                    466,
                                                 ),
                                                 end: TextSize(
-                                                    86,
+                                                    467,
                                                 ),
                                             },
                                         },
                                     ),
                                     range: TextRange {
                                         start: TextSize(
-                                            81,
+                                            462,
                                         ),
                                         end: TextSize(
-                                            86,
+                                            467,
                                         ),
                                     },
                                 },
@@ -255,30 +756,30 @@ Ok(
                                     value: 5,
                                     range: TextRange {
                                         start: TextSize(
-                                            89,
+                                            470,
                                         ),
                                         end: TextSize(
-                                            90,
+                                            471,
                                         ),
                                     },
                                 },
                             ),
                             range: TextRange {
                                 start: TextSize(
-                                    81,
+                                    462,
                                 ),
                                 end: TextSize(
-                                    90,
+                                    471,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            77,
+                            458,
                         ),
                         end: TextSize(
-                            90,
+                            471,
                         ),
                     },
                 },
@@ -291,10 +792,10 @@ Ok(
                                 id: "c",
                                 range: TextRange {
                                     start: TextSize(
-                                        91,
+                                        472,
                                     ),
                                     end: TextSize(
-                                        92,
+                                        473,
                                     ),
                                 },
                             },
@@ -307,10 +808,10 @@ Ok(
                                     value: 10,
                                     range: TextRange {
                                         start: TextSize(
-                                            95,
+                                            476,
                                         ),
                                         end: TextSize(
-                                            97,
+                                            478,
                                         ),
                                     },
                                 },
@@ -321,30 +822,30 @@ Ok(
                                     value: 2,
                                     range: TextRange {
                                         start: TextSize(
-                                            100,
+                                            481,
                                         ),
                                         end: TextSize(
-                                            101,
+                                            482,
                                         ),
                                     },
                                 },
                             ),
                             range: TextRange {
                                 start: TextSize(
-                                    95,
+                                    476,
                                 ),
                                 end: TextSize(
-                                    101,
+                                    482,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            91,
+                            472,
                         ),
                         end: TextSize(
-                            101,
+                            482,
                         ),
                     },
                 },
@@ -357,10 +858,10 @@ Ok(
                                 id: "d",
                                 range: TextRange {
                                     start: TextSize(
-                                        102,
+                                        483,
                                     ),
                                     end: TextSize(
-                                        103,
+                                        484,
                                     ),
                                 },
                             },
@@ -373,10 +874,10 @@ Ok(
                                     value: 7,
                                     range: TextRange {
                                         start: TextSize(
-                                            106,
+                                            487,
                                         ),
                                         end: TextSize(
-                                            107,
+                                            488,
                                         ),
                                     },
                                 },
@@ -387,30 +888,30 @@ Ok(
                                     value: 3,
                                     range: TextRange {
                                         start: TextSize(
-                                            111,
+                                            492,
                                         ),
                                         end: TextSize(
-                                            112,
+                                            493,
                                         ),
                                     },
                                 },
                             ),
                             range: TextRange {
                                 start: TextSize(
-                                    106,
+                                    487,
                                 ),
                                 end: TextSize(
-                                    112,
+                                    493,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            102,
+                            483,
                         ),
                         end: TextSize(
-                            112,
+                            493,
                         ),
                     },
                 },
@@ -423,10 +924,10 @@ Ok(
                                 id: "e",
                                 range: TextRange {
                                     start: TextSize(
-                                        113,
+                                        494,
                                     ),
                                     end: TextSize(
-                                        114,
+                                        495,
                                     ),
                                 },
                             },
@@ -439,10 +940,10 @@ Ok(
                                     value: 8,
                                     range: TextRange {
                                         start: TextSize(
-                                            117,
+                                            498,
                                         ),
                                         end: TextSize(
-                                            118,
+                                            499,
                                         ),
                                     },
                                 },
@@ -453,30 +954,30 @@ Ok(
                                     value: 3,
                                     range: TextRange {
                                         start: TextSize(
-                                            121,
+                                            502,
                                         ),
                                         end: TextSize(
-                                            122,
+                                            503,
                                         ),
                                     },
                                 },
                             ),
                             range: TextRange {
                                 start: TextSize(
-                                    117,
+                                    498,
                                 ),
                                 end: TextSize(
-                                    122,
+                                    503,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            113,
+                            494,
                         ),
                         end: TextSize(
-                            122,
+                            503,
                         ),
                     },
                 },
@@ -489,10 +990,10 @@ Ok(
                                 id: "f",
                                 range: TextRange {
                                     start: TextSize(
-                                        123,
+                                        504,
                                     ),
                                     end: TextSize(
-                                        124,
+                                        505,
                                     ),
                                 },
                             },
@@ -505,10 +1006,10 @@ Ok(
                                     value: 2,
                                     range: TextRange {
                                         start: TextSize(
-                                            127,
+                                            508,
                                         ),
                                         end: TextSize(
-                                            128,
+                                            509,
                                         ),
                                     },
                                 },
@@ -519,30 +1020,30 @@ Ok(
                                     value: 10,
                                     range: TextRange {
                                         start: TextSize(
-                                            132,
+                                            513,
                                         ),
                                         end: TextSize(
-                                            134,
+                                            515,
                                         ),
                                     },
                                 },
                             ),
                             range: TextRange {
                                 start: TextSize(
-                                    127,
+                                    508,
                                 ),
                                 end: TextSize(
-                                    134,
+                                    515,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            123,
+                            504,
                         ),
                         end: TextSize(
-                            134,
+                            515,
                         ),
                     },
                 },
@@ -555,10 +1056,10 @@ Ok(
                                 id: "g",
                                 range: TextRange {
                                     start: TextSize(
-                                        149,
+                                        530,
                                     ),
                                     end: TextSize(
-                                        150,
+                                        531,
                                     ),
                                 },
                             },
@@ -571,10 +1072,10 @@ Ok(
                                     id: "x",
                                     range: TextRange {
                                         start: TextSize(
-                                            153,
+                                            534,
                                         ),
                                         end: TextSize(
-                                            154,
+                                            535,
                                         ),
                                     },
                                 },
@@ -588,10 +1089,10 @@ Ok(
                                         id: "y",
                                         range: TextRange {
                                             start: TextSize(
-                                                157,
+                                                538,
                                             ),
                                             end: TextSize(
-                                                158,
+                                                539,
                                             ),
                                         },
                                     },
@@ -599,20 +1100,20 @@ Ok(
                             ],
                             range: TextRange {
                                 start: TextSize(
-                                    153,
+                                    534,
                                 ),
                                 end: TextSize(
-                                    158,
+                                    539,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            149,
+                            530,
                         ),
                         end: TextSize(
-                            158,
+                            539,
                         ),
                     },
                 },
@@ -625,10 +1126,10 @@ Ok(
                                 id: "h",
                                 range: TextRange {
                                     start: TextSize(
-                                        159,
+                                        540,
                                     ),
                                     end: TextSize(
-                                        160,
+                                        541,
                                     ),
                                 },
                             },
@@ -641,10 +1142,10 @@ Ok(
                                     id: "x",
                                     range: TextRange {
                                         start: TextSize(
-                                            163,
+                                            544,
                                         ),
                                         end: TextSize(
-                                            164,
+                                            545,
                                         ),
                                     },
                                 },
@@ -658,10 +1159,10 @@ Ok(
                                         value: 1,
                                         range: TextRange {
                                             start: TextSize(
-                                                168,
+                                                549,
                                             ),
                                             end: TextSize(
-                                                169,
+                                                550,
                                             ),
                                         },
                                     },
@@ -669,20 +1170,20 @@ Ok(
                             ],
                             range: TextRange {
                                 start: TextSize(
-                                    163,
+                                    544,
                                 ),
                                 end: TextSize(
-                                    169,
+                                    550,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            159,
+                            540,
                         ),
                         end: TextSize(
-                            169,
+                            550,
                         ),
                     },
                 },
@@ -695,10 +1196,10 @@ Ok(
                                 id: "i",
                                 range: TextRange {
                                     start: TextSize(
-                                        170,
+                                        551,
                                     ),
                                     end: TextSize(
-                                        171,
+                                        552,
                                     ),
                                 },
                             },
@@ -711,10 +1212,10 @@ Ok(
                                     id: "y",
                                     range: TextRange {
                                         start: TextSize(
-                                            174,
+                                            555,
                                         ),
                                         end: TextSize(
-                                            175,
+                                            556,
                                         ),
                                     },
                                 },
@@ -728,10 +1229,10 @@ Ok(
                                         id: "z",
                                         range: TextRange {
                                             start: TextSize(
-                                                179,
+                                                560,
                                             ),
                                             end: TextSize(
-                                                180,
+                                                561,
                                             ),
                                         },
                                     },
@@ -739,20 +1240,20 @@ Ok(
                             ],
                             range: TextRange {
                                 start: TextSize(
-                                    174,
+                                    555,
                                 ),
                                 end: TextSize(
-                                    180,
+                                    561,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            170,
+                            551,
                         ),
                         end: TextSize(
-                            180,
+                            561,
                         ),
                     },
                 },
@@ -765,10 +1266,10 @@ Ok(
                                 id: "my_list",
                                 range: TextRange {
                                     start: TextSize(
-                                        194,
+                                        575,
                                     ),
                                     end: TextSize(
-                                        201,
+                                        582,
                                     ),
                                 },
                             },
@@ -782,10 +1283,10 @@ Ok(
                                         value: 1,
                                         range: TextRange {
                                             start: TextSize(
-                                                205,
+                                                586,
                                             ),
                                             end: TextSize(
-                                                206,
+                                                587,
                                             ),
                                         },
                                     },
@@ -795,10 +1296,10 @@ Ok(
                                         value: 2,
                                         range: TextRange {
                                             start: TextSize(
-                                                208,
+                                                589,
                                             ),
                                             end: TextSize(
-                                                209,
+                                                590,
                                             ),
                                         },
                                     },
@@ -808,10 +1309,10 @@ Ok(
                                         value: 3,
                                         range: TextRange {
                                             start: TextSize(
-                                                211,
+                                                592,
                                             ),
                                             end: TextSize(
-                                                212,
+                                                593,
                                             ),
                                         },
                                     },
@@ -819,20 +1320,20 @@ Ok(
                             ],
                             range: TextRange {
                                 start: TextSize(
-                                    204,
+                                    585,
                                 ),
                                 end: TextSize(
-                                    213,
+                                    594,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            194,
+                            575,
                         ),
                         end: TextSize(
-                            213,
+                            594,
                         ),
                     },
                 },
@@ -845,10 +1346,10 @@ Ok(
                                 id: "my_dict",
                                 range: TextRange {
                                     start: TextSize(
-                                        214,
+                                        595,
                                     ),
                                     end: TextSize(
-                                        221,
+                                        602,
                                     ),
                                 },
                             },
@@ -863,10 +1364,10 @@ Ok(
                                             value: "a",
                                             range: TextRange {
                                                 start: TextSize(
-                                                    225,
+                                                    606,
                                                 ),
                                                 end: TextSize(
-                                                    228,
+                                                    609,
                                                 ),
                                             },
                                         },
@@ -878,10 +1379,10 @@ Ok(
                                             value: "b",
                                             range: TextRange {
                                                 start: TextSize(
-                                                    233,
+                                                    614,
                                                 ),
                                                 end: TextSize(
-                                                    236,
+                                                    617,
                                                 ),
                                             },
                                         },
@@ -894,10 +1395,10 @@ Ok(
                                         value: 1,
                                         range: TextRange {
                                             start: TextSize(
-                                                230,
+                                                611,
                                             ),
                                             end: TextSize(
-                                                231,
+                                                612,
                                             ),
                                         },
                                     },
@@ -907,10 +1408,10 @@ Ok(
                                         value: 2,
                                         range: TextRange {
                                             start: TextSize(
-                                                238,
+                                                619,
                                             ),
                                             end: TextSize(
-                                                239,
+                                                620,
                                             ),
                                         },
                                     },
@@ -918,20 +1419,20 @@ Ok(
                             ],
                             range: TextRange {
                                 start: TextSize(
-                                    224,
+                                    605,
                                 ),
                                 end: TextSize(
-                                    240,
+                                    621,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            214,
+                            595,
                         ),
                         end: TextSize(
-                            240,
+                            621,
                         ),
                     },
                 },
@@ -944,10 +1445,10 @@ Ok(
                                 id: "my_tuple",
                                 range: TextRange {
                                     start: TextSize(
-                                        241,
+                                        622,
                                     ),
                                     end: TextSize(
-                                        249,
+                                        630,
                                     ),
                                 },
                             },
@@ -961,10 +1462,10 @@ Ok(
                                         value: 1,
                                         range: TextRange {
                                             start: TextSize(
-                                                253,
+                                                634,
                                             ),
                                             end: TextSize(
-                                                254,
+                                                635,
                                             ),
                                         },
                                     },
@@ -974,10 +1475,10 @@ Ok(
                                         value: 2,
                                         range: TextRange {
                                             start: TextSize(
-                                                256,
+                                                637,
                                             ),
                                             end: TextSize(
-                                                257,
+                                                638,
                                             ),
                                         },
                                     },
@@ -987,10 +1488,10 @@ Ok(
                                         value: 3,
                                         range: TextRange {
                                             start: TextSize(
-                                                259,
+                                                640,
                                             ),
                                             end: TextSize(
-                                                260,
+                                                641,
                                             ),
                                         },
                                     },
@@ -998,20 +1499,20 @@ Ok(
                             ],
                             range: TextRange {
                                 start: TextSize(
-                                    252,
+                                    633,
                                 ),
                                 end: TextSize(
-                                    261,
+                                    642,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            241,
+                            622,
                         ),
                         end: TextSize(
-                            261,
+                            642,
                         ),
                     },
                 },
@@ -1024,10 +1525,10 @@ Ok(
                                 id: "result",
                                 range: TextRange {
                                     start: TextSize(
-                                        279,
+                                        660,
                                     ),
                                     end: TextSize(
-                                        285,
+                                        666,
                                     ),
                                 },
                             },
@@ -1040,10 +1541,10 @@ Ok(
                                     id: "print",
                                     range: TextRange {
                                         start: TextSize(
-                                            288,
+                                            669,
                                         ),
                                         end: TextSize(
-                                            293,
+                                            674,
                                         ),
                                     },
                                 },
@@ -1054,10 +1555,10 @@ Ok(
                                         value: "hello",
                                         range: TextRange {
                                             start: TextSize(
-                                                294,
+                                                675,
                                             ),
                                             end: TextSize(
-                                                301,
+                                                682,
                                             ),
                                         },
                                     },
@@ -1066,20 +1567,20 @@ Ok(
                             keywords: [],
                             range: TextRange {
                                 start: TextSize(
-                                    288,
+                                    669,
                                 ),
                                 end: TextSize(
-                                    302,
+                                    683,
                                 ),
                             },
                         },
                     ),
                     range: TextRange {
                         start: TextSize(
-                            279,
+                            660,
                         ),
                         end: TextSize(
-                            302,
+                            683,
                         ),
                     },
                 },
@@ -1090,7 +1591,7 @@ Ok(
                 20,
             ),
             end: TextSize(
-                303,
+                684,
             ),
         },
     },

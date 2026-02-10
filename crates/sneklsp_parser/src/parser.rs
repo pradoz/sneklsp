@@ -463,7 +463,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         Option<Expression<'ast>>,
         &'ast [Statement<'ast>],
     )> {
-        let name = self.parse_ident()?;
+        let name = self.parse_identifier()?;
         self.expect(TokenKind::LParen)?;
         let params = self.parse_params()?;
         self.expect(TokenKind::RParen)?;
@@ -555,7 +555,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
 
     fn parse_param(&mut self) -> ParseResult<Parameter<'ast>> {
         let start = self.start();
-        let name = self.parse_ident()?;
+        let name = self.parse_identifier()?;
         let annotation = self.opt(TokenKind::Colon, Self::parse_expr)?;
         let default = self.opt(TokenKind::Eq, Self::parse_expr)?;
         Ok(Parameter {
@@ -572,7 +572,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     ) -> ParseResult<Statement<'ast>> {
         let start = self.start();
         self.expect(TokenKind::Class)?;
-        let name = self.parse_ident()?;
+        let name = self.parse_identifier()?;
         let (bases, keywords) = if self.consume(TokenKind::LParen) {
             let r = self.parse_class_args()?;
             self.expect(TokenKind::RParen)?;
@@ -610,7 +610,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     range: self.range(s),
                 });
             } else if self.check(TokenKind::Name) {
-                let name = self.parse_ident()?;
+                let name = self.parse_identifier()?;
                 if self.consume(TokenKind::Eq) {
                     let v = self.parse_expr()?;
                     kws.push(Keyword {
@@ -624,7 +624,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                         range: self.range(s),
                     }));
                     while self.consume(TokenKind::Dot) {
-                        let attr = self.parse_ident()?;
+                        let attr = self.parse_identifier()?;
                         e = Expression::Attribute(self.arena.alloc(AttributeExpr {
                             value: e,
                             attr,
@@ -737,7 +737,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         } else {
             (
                 Some(self.parse_expr()?),
-                self.opt(TokenKind::As, Self::parse_ident)?,
+                self.opt(TokenKind::As, Self::parse_identifier)?,
             )
         };
         self.expect(TokenKind::Colon)?;
@@ -843,12 +843,29 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             level += 1;
         }
         let module = if self.check(TokenKind::Name) {
-            Some(self.parse_ident()?)
+            Some(self.parse_dotted_name()?)
         } else {
             None
         };
         self.expect(TokenKind::Import)?;
-        let names = self.parse_aliases()?;
+
+        let names = if self.consume(TokenKind::LParen) {
+            let aliases = self.comma_list(TokenKind::RParen, |p| {
+                let s = p.start();
+                let name = p.parse_dotted_name()?;
+                let asname = p.opt(TokenKind::As, Self::parse_identifier)?;
+                Ok(Alias {
+                    name,
+                    asname,
+                    range: p.range(s),
+                })
+            })?;
+            self.expect(TokenKind::RParen)?;
+            self.arena.alloc_slice(aliases)
+        } else {
+            self.parse_aliases()?
+        };
+
         let end = self.previous.range.end();
         self.expect_newline()?;
         Ok(Statement::ImportFrom(self.arena.alloc(ImportFromStmt {
@@ -862,8 +879,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     fn parse_aliases(&mut self) -> ParseResult<&'ast [Alias<'ast>]> {
         let aliases = self.comma_list(TokenKind::Newline, |p| {
             let s = p.start();
-            let name = p.parse_ident()?;
-            let asname = p.opt(TokenKind::As, Self::parse_ident)?;
+            let name = p.parse_dotted_name()?;
+            let asname = p.opt(TokenKind::As, Self::parse_identifier)?;
             Ok(Alias {
                 name,
                 asname,
@@ -871,6 +888,27 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             })
         })?;
         Ok(self.arena.alloc_slice(aliases))
+    }
+
+    fn parse_dotted_name(&mut self) -> ParseResult<Identifier<'ast>> {
+        let first = self.parse_identifier()?;
+
+        if !self.check(TokenKind::Dot) {
+            return Ok(first);
+        }
+
+        // build dotted name string
+        let mut name = String::from(first);
+        while self.consume(TokenKind::Dot) {
+            if !self.check(TokenKind::Name) {
+                break;
+            }
+            name.push('.');
+            name.push_str(self.token_text());
+            self.advance();
+        }
+
+        Ok(self.arena.alloc_str(&name))
     }
 
     fn parse_global_nonlocal(&mut self, is_global: bool) -> ParseResult<Statement<'ast>> {
@@ -976,7 +1014,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
     }
 
-    fn parse_ident(&mut self) -> ParseResult<Identifier<'ast>> {
+    fn parse_identifier(&mut self) -> ParseResult<Identifier<'ast>> {
         if self.check(TokenKind::Name) {
             let id = self.arena.alloc_str(self.token_text());
             self.advance();
@@ -987,7 +1025,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 
     fn parse_ident_list(&mut self) -> ParseResult<&'ast [Identifier<'ast>]> {
-        let ids = self.comma_list(TokenKind::Newline, Self::parse_ident)?;
+        let ids = self.comma_list(TokenKind::Newline, Self::parse_identifier)?;
         Ok(self.arena.alloc_slice(ids))
     }
 
@@ -1184,7 +1222,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     range: TextRange::new(e.range().start(), self.previous.range.end()),
                 }));
             } else if self.consume(TokenKind::Dot) {
-                let attr = self.parse_ident()?;
+                let attr = self.parse_identifier()?;
                 e = Expression::Attribute(self.arena.alloc(AttributeExpr {
                     value: e,
                     attr,
@@ -1615,7 +1653,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     continue;
                 }
                 let s = self.start();
-                let name = self.parse_ident()?;
+                let name = self.parse_identifier()?;
                 vararg = Some(self.arena.alloc(Parameter {
                     name,
                     annotation: None,
@@ -1629,7 +1667,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             }
             if self.consume(TokenKind::DoubleStar) {
                 let s = self.start();
-                let name = self.parse_ident()?;
+                let name = self.parse_identifier()?;
                 kwarg = Some(self.arena.alloc(Parameter {
                     name,
                     annotation: None,
@@ -1640,7 +1678,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 break;
             }
             let s = self.start();
-            let name = self.parse_ident()?;
+            let name = self.parse_identifier()?;
             let default = self.opt(TokenKind::Eq, Self::parse_expr)?;
             let p = Parameter {
                 name,
