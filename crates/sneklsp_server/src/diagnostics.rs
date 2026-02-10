@@ -1,5 +1,6 @@
 use crate::handlers::to_lsp_range;
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
+use sneklsp_db::{ParseErrorKind, SerializedParseError};
 use sneklsp_index::OwnedIndex;
 use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
@@ -142,4 +143,53 @@ fn to_parse_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic
         tags: None,
         data: None,
     }
+}
+
+fn serialized_error_to_diagnostic(
+    error: &SerializedParseError,
+    line_index: &LineIndex,
+) -> Diagnostic {
+    let range = match &error.kind {
+        ParseErrorKind::UnexpectedToken { range: error_range } => {
+            to_lsp_range(*error_range, line_index)
+        }
+        ParseErrorKind::UnexpectedEof => {
+            let line = line_index.line_count().saturating_sub(1) as u32;
+            zero_width_range(line, 0)
+        }
+        ParseErrorKind::InvalidSyntax { offset } => {
+            let pos = line_index.position(*offset);
+            let start = Position {
+                line: pos.line,
+                character: pos.column,
+            };
+            let end = Position {
+                line: pos.line,
+                character: pos.column + 1,
+            };
+            Range { start, end }
+        }
+    };
+
+    Diagnostic {
+        range,
+        severity: Some(DiagnosticSeverity::ERROR),
+        code: None,
+        code_description: None,
+        source: Some("sneklsp".to_string()),
+        message: error.message.clone(),
+        related_information: None,
+        tags: None,
+        data: None,
+    }
+}
+
+pub fn serialized_errors_to_diagnostics(
+    errors: &[SerializedParseError],
+    line_index: &LineIndex,
+) -> Vec<Diagnostic> {
+    errors
+        .iter()
+        .map(|e| serialized_error_to_diagnostic(e, line_index))
+        .collect()
 }

@@ -8,7 +8,7 @@ pub struct Position {
 }
 
 /// index to convert between byte offsets and line/column positions
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LineIndex {
     line_starts: Vec<TextSize>,
 }

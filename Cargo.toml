@@ -17,6 +17,8 @@ sneklsp_server = { path = "crates/sneklsp_server" }
 sneklsp_index = { path = "crates/sneklsp_index" }
 sneklsp_vfs = { path = "crates/sneklsp_vfs" }
 sneklsp_workspace = { path = "crates/sneklsp_workspace" }
+sneklsp_db = { path = "crates/sneklsp_db" }
+sneklsp_syntax = { path = "crates/sneklsp_syntax" }
 
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
@@ -32,6 +34,7 @@ serde_json = "1.0"
 bumpalo = "3.16"
 crossbeam-channel = "0.5"
 rustc-hash = "2.1"
+salsa = "0.26"
 
 insta = "1.42"
 criterion = { version = "0.5", features = ["html_reports"] }

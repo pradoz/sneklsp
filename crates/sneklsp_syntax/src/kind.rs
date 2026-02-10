@@ -1,0 +1,193 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum SyntaxKind {
+    // NOTE: this mirrors sneklsp_lexer::TokenKind
+    Name = 0,
+    Int,
+    Float,
+    String,
+    FString,
+
+    // keywords
+    KwAnd,
+    KwAs,
+    KwAssert,
+    KwAsync,
+    KwAwait,
+    KwBreak,
+    KwClass,
+    KwContinue,
+    KwDef,
+    KwDel,
+    KwElif,
+    KwElse,
+    KwExcept,
+    KwFalse,
+    KwFinally,
+    KwFor,
+    KwFrom,
+    KwGlobal,
+    KwIf,
+    KwImport,
+    KwIn,
+    KwIs,
+    KwLambda,
+    KwNone,
+    KwNonlocal,
+    KwNot,
+    KwOr,
+    KwPass,
+    KwRaise,
+    KwReturn,
+    KwTrue,
+    KwTry,
+    KwWhile,
+    KwWith,
+    KwYield,
+
+    // punctuation
+    LParen,
+    RParen,
+    LBracket,
+    RBracket,
+    LBrace,
+    RBrace,
+    Colon,
+    Comma,
+    Semi,
+    Dot,
+    Arrow,
+    At,
+    Ellipsis,
+
+    // operators
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    DoubleSlash,
+    Percent,
+    DoubleStar,
+    Amp,
+    Pipe,
+    Caret,
+    Tilde,
+    LtLt,
+    GtGt,
+
+    // comparison/assignment
+    Eq,
+    EqEq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    PlusEq,
+    MinusEq,
+    StarEq,
+    SlashEq,
+    PercentEq,
+    AmpEq,
+    PipeEq,
+    CaretEq,
+    ColonEq,
+
+    // whitespace/structure
+    Newline,
+    Indent,
+    Dedent,
+    Whitespace,
+    Comment,
+
+    // special
+    Eof,
+    Error,
+
+    // — Composite Nodes —
+    Module,
+
+    // statements
+    FunctionDef,
+    AsyncFunctionDef,
+    ClassDef,
+    ReturnStmt,
+    AssignStmt,
+    AugAssignStmt,
+    AnnAssignStmt,
+    IfStmt,
+    ForStmt,
+    AsyncForStmt,
+    WhileStmt,
+    WithStmt,
+    AsyncWithStmt,
+    TryStmt,
+    RaiseStmt,
+    AssertStmt,
+    ImportStmt,
+    ImportFromStmt,
+    GlobalStmt,
+    NonlocalStmt,
+    ExprStmt,
+    DeleteStmt,
+    PassStmt,
+    BreakStmt,
+    ContinueStmt,
+
+    // expressions
+    NameExpr,
+    IntExpr,
+    FloatExpr,
+    StringExpr,
+    FStringExpr,
+    BoolExpr,
+    NoneExpr,
+    EllipsisExpr,
+    BinOpExpr,
+    UnaryOpExpr,
+    BoolOpExpr,
+    CompareExpr,
+    CallExpr,
+    AttributeExpr,
+    SubscriptExpr,
+    ListExpr,
+    TupleExpr,
+    DictExpr,
+    SetExpr,
+    LambdaExpr,
+    IfExpr,
+    ListCompExpr,
+    SetCompExpr,
+    DictCompExpr,
+    GeneratorExpr,
+    YieldExpr,
+    YieldFromExpr,
+    AwaitExpr,
+    StarredExpr,
+    NamedExpr,
+    SliceExpr,
+
+    // structural
+    Parameters,
+    Parameter,
+    Argument,
+    Keyword,
+    Decorator,
+    ExceptHandler,
+    WithItem,
+    Comprehension,
+    Alias,
+    Block,
+}
+
+impl SyntaxKind {
+    #[inline]
+    pub const fn is_token(self) -> bool {
+        (self as u16) <= (Self::Error as u16)
+    }
+
+    #[inline]
+    pub const fn is_node(self) -> bool {
+        !self.is_token()
+    }
+}

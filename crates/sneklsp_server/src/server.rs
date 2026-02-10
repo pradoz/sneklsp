@@ -20,10 +20,11 @@ use lsp_types::{
     TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
 };
 
+use crate::analysis::AnalysisHost;
 use crate::background::{BackgroundParser, ParseResult};
 use crate::debouncer::Debouncer;
 use crate::diagnostics::{parse_diagnostics, semantic_diagnostics};
-use crate::document::{Document, EditRecord};
+use crate::document::Document;
 use crate::handlers;
 use sneklsp_vfs::{FileId, VfsPath};
 use sneklsp_workspace::{FileState, Workspace};
@@ -116,6 +117,7 @@ struct Server {
     parser: BackgroundParser,
     debouncer: Debouncer,
     workspace_index_rx: Option<Receiver<(FileId, FileState)>>,
+    analysis: AnalysisHost,
 }
 
 impl Server {
@@ -127,6 +129,7 @@ impl Server {
             parser: BackgroundParser::new(),
             debouncer: Debouncer::new(),
             workspace_index_rx: None,
+            analysis: AnalysisHost::new(),
         }
     }
 
@@ -261,56 +264,63 @@ impl Server {
 
     fn process_debounced(&mut self) {
         for (uri, version) in self.debouncer.take_ready() {
-            if let Some(state) = self.documents.get_mut(&uri) {
-                if state.document.version == version {
-                    tracing::debug!(?uri, version, "debounce complete. submitting parse");
-
-                    let content = state.document.take_content_for_parse();
-                    let edits = state.document.take_edits();
-                    let has_prior_index = state.document.index.is_some();
-
-                    let (old_tokens, old_content) =
-                        if edits.len() == 1 && state.document.has_tokens() {
-                            let old_content = Self::reconstruct_old_content(&content, &edits);
-                            (Some(state.document.tokens.clone()), Some(old_content))
-                        } else {
-                            (None, None)
-                        };
-
-                    let request_id = self.parser.parse(
-                        uri.clone(),
-                        content,
-                        version,
-                        edits,
-                        has_prior_index,
-                        old_tokens,
-                        old_content,
-                    );
-                    state.pending_request_id = request_id;
-                }
+            let Some(state) = self.documents.get_mut(&uri) else {
+                continue;
+            };
+            if state.document.version != version {
+                continue;
             }
+
+            tracing::debug!(?uri, version, "debounce complete. submitting parse");
+
+            let file_id = state.file_id;
+            let content = state.document.take_content_for_parse();
+            let path = self
+                .workspace
+                .vfs
+                .file_path(file_id)
+                .as_path()
+                .display()
+                .to_string();
+
+            self.analysis.set_file_content(file_id, &path, content);
+
+            let start = std::time::Instant::now();
+            let Some(analysis) = self.analysis.analyze_file(file_id) else {
+                continue;
+            };
+
+            let elapsed = start.elapsed();
+            tracing::debug!(
+                ?uri,
+                ?elapsed,
+                error_count = analysis.errors.len(),
+                token_count = analysis.tokens.len(),
+                "salsa analysis complete"
+            );
+
+            // reborrow state mutably after analysis
+            let state = self.documents.get_mut(&uri).unwrap();
+            state.document.set_tokens(analysis.tokens.clone());
+            if let Some(ref idx) = analysis.index {
+                state
+                    .document
+                    .set_index_from_analysis(idx, &analysis.line_index);
+            }
+            state.pending_request_id = None;
+
+            let mut diagnostics = crate::diagnostics::serialized_errors_to_diagnostics(
+                &analysis.errors,
+                &analysis.line_index,
+            );
+            if let Some(ref idx) = analysis.index {
+                diagnostics.extend(crate::diagnostics::semantic_diagnostics(
+                    idx,
+                    &analysis.line_index,
+                ));
+            }
+            self.send_diagnostics(&uri, diagnostics);
         }
-    }
-
-    fn reconstruct_old_content(current: &str, edits: &[EditRecord]) -> String {
-        if edits.len() != 1 {
-            return current.to_string();
-        }
-
-        let edit = &edits[0];
-        let start = edit.range.start().to_usize();
-        let new_end = start + edit.new_len.to_usize();
-
-        if new_end > current.len() {
-            return current.to_string();
-        }
-
-        let mut old =
-            String::with_capacity(current.len() - edit.new_len.to_usize() + edit.old_content.len());
-        old.push_str(&current[..start]);
-        old.push_str(&edit.old_content);
-        old.push_str(&current[new_end..]);
-        old
     }
 
     fn handle_parse_result(&mut self, result: ParseResult) {

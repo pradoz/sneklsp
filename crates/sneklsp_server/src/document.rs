@@ -130,6 +130,13 @@ impl Document {
         self.line_index = line_index;
         self.index = Some(index);
     }
+
+    #[inline]
+    pub fn set_index_from_analysis(&mut self, index: &OwnedIndex, line_index: &LineIndex) {
+        self.content = String::new();
+        self.line_index = line_index.clone();
+        self.index = Some(index.clone());
+    }
 }
 
 impl From<(String, i32)> for Document {
