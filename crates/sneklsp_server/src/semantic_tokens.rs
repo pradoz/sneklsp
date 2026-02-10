@@ -2,7 +2,6 @@ use lsp_types::{
     SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensLegend, SemanticTokensResult,
 };
 
-use crate::server::DocumentState;
 use sneklsp_index::OwnedIndex;
 use sneklsp_text::LineIndex;
 

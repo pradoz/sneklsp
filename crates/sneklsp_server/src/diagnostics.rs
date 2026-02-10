@@ -1,7 +1,5 @@
-use std::collections::HashSet;
-
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::analysis::AnalysisHost;
 use crate::handlers::to_lsp_range;
@@ -10,17 +8,45 @@ use sneklsp_index::OwnedIndex;
 use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
 
+#[inline]
+pub fn parse_diagnostics(errors: &[ParseError], line_index: &LineIndex) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::with_capacity(errors.len());
+    for e in errors {
+        diagnostics.push(to_parse_diagnostic(e, line_index));
+    }
+    diagnostics
+}
+
+pub fn serialized_errors_to_diagnostics(
+    errors: &[SerializedParseError],
+    line_index: &LineIndex,
+) -> Vec<Diagnostic> {
+    errors
+        .iter()
+        .map(|e| serialized_error_to_diagnostic(e, line_index))
+        .collect()
+}
+
+pub fn semantic_diagnostics(
+    index: &OwnedIndex,
+    line_index: &LineIndex,
+    analysis: &crate::analysis::AnalysisHost,
+) -> Vec<Diagnostic> {
+    let mut collector = DiagnosticCollector::new(index, line_index, analysis);
+    collector.run();
+    collector.diagnostics
+}
+
 struct DiagnosticCollector<'a> {
     index: &'a OwnedIndex,
     line_index: &'a LineIndex,
     diagnostics: Vec<Diagnostic>,
     ref_counts: FxHashMap<u32, u32>,
-    cross_file_names: HashSet<String>,
+    cross_file_names: FxHashSet<String>,
 }
 
 impl<'a> DiagnosticCollector<'a> {
-    fn new(index: &'a OwnedIndex, line_index: &'a LineIndex, analysis: &'a AnalysisHost) -> Self {
-        // pre-build reference counts
+    fn new(index: &'a OwnedIndex, line_index: &'a LineIndex, analysis: &AnalysisHost) -> Self {
         let mut ref_counts: FxHashMap<u32, u32> = FxHashMap::default();
         for reference in index.references() {
             if let Some(sym_id) = reference.resolved {
@@ -28,8 +54,7 @@ impl<'a> DiagnosticCollector<'a> {
             }
         }
 
-        // pre-collect cross-file exported names
-        let mut cross_file_names = HashSet::new();
+        let mut cross_file_names = FxHashSet::default();
         for file_id in analysis.file_ids() {
             if let Some(exports) = analysis.exported_symbols(file_id) {
                 for export in exports {
@@ -65,12 +90,10 @@ impl<'a> DiagnosticCollector<'a> {
                 continue;
             }
 
-            // dunder names are probably magic globals
             if name.starts_with("__") && name.ends_with("__") {
                 continue;
             }
 
-            // Known from another workspace file
             if self.cross_file_names.contains(name) {
                 continue;
             }
@@ -85,8 +108,7 @@ impl<'a> DiagnosticCollector<'a> {
     }
 
     fn check_symbols(&mut self) {
-        // track import names for shadowing detection
-        let mut import_names: HashSet<String> = HashSet::new();
+        let mut import_names: FxHashSet<String> = FxHashSet::default();
 
         for symbol in self.index.symbols() {
             let name = self.index.symbol_name(symbol);
@@ -107,7 +129,6 @@ impl<'a> DiagnosticCollector<'a> {
                 }
 
                 sneklsp_index::SymbolKind::Variable => {
-                    // shadowed import
                     if import_names.contains(name) {
                         self.push(
                             symbol.selection_range,
@@ -117,7 +138,6 @@ impl<'a> DiagnosticCollector<'a> {
                         );
                     }
 
-                    // unused variable
                     if !has_refs && !name.starts_with('_') && symbol.scope != 0 {
                         self.push(
                             symbol.selection_range,
@@ -148,7 +168,6 @@ impl<'a> DiagnosticCollector<'a> {
                 continue;
             };
 
-            // only flag functions/classes
             if !matches!(
                 symbol.kind,
                 sneklsp_index::SymbolKind::Function
@@ -181,12 +200,10 @@ impl<'a> DiagnosticCollector<'a> {
     }
 
     fn check_missing_self(&mut self, scope: &sneklsp_index::ScopeData) {
-        // only check class scopes
         if scope.kind != sneklsp_index::ScopeKind::Class {
             return;
         }
 
-        // find method definitions in this class scope children
         for &child_id in &scope.children {
             let Some(child_scope) = self.index.scope(child_id) else {
                 continue;
@@ -211,6 +228,10 @@ impl<'a> DiagnosticCollector<'a> {
 
             let method_name = self.index.symbol_name(method);
 
+            if method_name.starts_with("__") && method_name.ends_with("__") {
+                continue;
+            }
+
             let has_self_or_cls = child_scope.symbols.iter().any(|&sym_id| {
                 let Some(sym) = self.index.symbol(sym_id) else {
                     return false;
@@ -221,11 +242,6 @@ impl<'a> DiagnosticCollector<'a> {
                 let name = self.index.symbol_name(sym);
                 name == "self" || name == "cls"
             });
-
-            // skip dunder methods that might be staticmethod
-            if method_name.starts_with("__") && method_name.ends_with("__") {
-                continue;
-            }
 
             if !has_self_or_cls && !child_scope.symbols.is_empty() {
                 let has_any_param = child_scope.symbols.iter().any(|&sym_id| {
@@ -245,7 +261,6 @@ impl<'a> DiagnosticCollector<'a> {
                         None,
                     );
                 } else {
-                    // No parameters at all
                     self.push(
                         method.selection_range,
                         DiagnosticSeverity::WARNING,
@@ -277,25 +292,6 @@ impl<'a> DiagnosticCollector<'a> {
             data: None,
         });
     }
-}
-
-#[inline]
-pub fn parse_diagnostics(errors: &[ParseError], line_index: &LineIndex) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::with_capacity(errors.len());
-    for e in errors {
-        diagnostics.push(to_parse_diagnostic(e, line_index));
-    }
-    diagnostics
-}
-
-pub fn semantic_diagnostics(
-    index: &OwnedIndex,
-    line_index: &LineIndex,
-    analysis: &AnalysisHost,
-) -> Vec<Diagnostic> {
-    let mut collector = DiagnosticCollector::new(index, line_index, analysis);
-    collector.run();
-    collector.diagnostics
 }
 
 #[inline]
@@ -391,14 +387,4 @@ fn serialized_error_to_diagnostic(
         tags: None,
         data: None,
     }
-}
-
-pub fn serialized_errors_to_diagnostics(
-    errors: &[SerializedParseError],
-    line_index: &LineIndex,
-) -> Vec<Diagnostic> {
-    errors
-        .iter()
-        .map(|e| serialized_error_to_diagnostic(e, line_index))
-        .collect()
 }
