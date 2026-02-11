@@ -9,6 +9,7 @@ use lsp_types::notification::{
     Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
+    CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
     CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
     FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, PrepareRenameRequest,
     References, Rename, Request as _, SelectionRangeRequest, SemanticTokensFullRequest,
@@ -52,6 +53,7 @@ pub fn run_server() -> Result<()> {
                 save: Some(SaveOptions::default().into()),
             },
         )),
+        call_hierarchy_provider: Some(lsp_types::CallHierarchyServerCapability::Simple(true)),
         code_action_provider: Some(lsp_types::CodeActionProviderCapability::Simple(true)),
         completion_provider: Some(lsp_types::CompletionOptions {
             trigger_characters: Some(vec![".".to_string()]),
@@ -436,6 +438,27 @@ impl Server {
         tracing::debug!(?req.method, "handling request");
 
         match req.method.as_str() {
+            CallHierarchyPrepare::METHOD => {
+                let (id, params) = cast_request::<CallHierarchyPrepare>(req)?;
+                let result = handlers::handle_prepare_call_hierarchy(params, &self.documents);
+                self.send_response(id, result);
+            }
+            CallHierarchyIncomingCalls::METHOD => {
+                let (id, params) = cast_request::<CallHierarchyIncomingCalls>(req)?;
+                let result = handlers::handle_incoming_calls(
+                    params,
+                    &self.documents,
+                    &self.analysis,
+                    &self.workspace,
+                );
+                self.send_response(id, result);
+            }
+            CallHierarchyOutgoingCalls::METHOD => {
+                let (id, params) = cast_request::<CallHierarchyOutgoingCalls>(req)?;
+                let result = handlers::handle_outgoing_calls(params, &self.documents);
+                self.send_response(id, result);
+            }
+
             CodeActionRequest::METHOD => {
                 let (id, params) = cast_request::<CodeActionRequest>(req)?;
                 let result = handlers::handle_code_action(params, &self.documents);

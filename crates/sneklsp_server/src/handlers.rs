@@ -1,4 +1,6 @@
 use lsp_types::{
+    CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
+    CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, DocumentSymbol,
     DocumentSymbolParams, DocumentSymbolResponse, FoldingRange, FoldingRangeKind,
@@ -210,6 +212,223 @@ fn find_symbol_children(
     }
 
     children
+}
+
+pub fn handle_prepare_call_hierarchy(
+    params: CallHierarchyPrepareParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<Vec<CallHierarchyItem>> {
+    let uri = params.text_document_position_params.text_document.uri;
+    let pos = params.text_document_position_params.position;
+
+    let query = get_document_query(&uri, documents)?;
+    let offset = from_lsp_position(pos, query.line_index)?;
+
+    let symbol = query.find_symbol_at(offset)?;
+
+    if !matches!(
+        symbol.kind,
+        sneklsp_index::SymbolKind::Function
+            | sneklsp_index::SymbolKind::Method
+            | sneklsp_index::SymbolKind::Class
+    ) {
+        return None;
+    }
+
+    let name = query.index.symbol_name(symbol).to_string();
+
+    Some(vec![CallHierarchyItem {
+        name,
+        kind: to_lsp_symbol_kind(symbol.kind),
+        tags: None,
+        detail: scope_container_name(query.index, symbol),
+        uri: uri.clone(),
+        range: to_lsp_range(symbol.range, query.line_index),
+        selection_range: to_lsp_range(symbol.selection_range, query.line_index),
+        data: Some(serde_json::to_value(symbol.id).unwrap()),
+    }])
+}
+
+pub fn handle_incoming_calls(
+    params: CallHierarchyIncomingCallsParams,
+    documents: &HashMap<Uri, DocumentState>,
+    analysis: &AnalysisHost,
+    workspace: &Workspace,
+) -> Option<Vec<CallHierarchyIncomingCall>> {
+    let item = &params.item;
+    let symbol_name = &item.name;
+    let target_uri = &item.uri;
+
+    let mut calls = Vec::new();
+
+    if let Some(query) = get_document_query(target_uri, documents) {
+        collect_incoming_calls_in_file(
+            query.index,
+            query.line_index,
+            target_uri,
+            symbol_name,
+            &mut calls,
+        );
+    }
+
+    // Search other workspace files
+    for file_id in analysis.file_ids() {
+        let vfs_path = workspace.vfs.file_path(file_id);
+        let Some(file_uri) = vfs_path.to_uri() else {
+            continue;
+        };
+
+        if file_uri == *target_uri {
+            continue;
+        }
+
+        let (index, line_index) = if let Some(state) = documents.get(&file_uri) {
+            match (state.document.index.as_ref(), &state.document.line_index) {
+                (Some(idx), li) => (idx, li),
+                _ => continue,
+            }
+        } else if let Some(file_analysis) = analysis.analyze_file(file_id) {
+            match file_analysis.index.as_ref() {
+                Some(idx) => (idx, &file_analysis.line_index),
+                None => continue,
+            }
+        } else {
+            continue;
+        };
+
+        collect_incoming_calls_in_file(index, line_index, &file_uri, symbol_name, &mut calls);
+    }
+
+    if calls.is_empty() { None } else { Some(calls) }
+}
+
+fn collect_incoming_calls_in_file(
+    index: &OwnedIndex,
+    line_index: &LineIndex,
+    uri: &Uri,
+    target_name: &str,
+    calls: &mut Vec<CallHierarchyIncomingCall>,
+) {
+    // find references to the target name
+    for reference in index.references() {
+        if index.reference_name(reference) != target_name {
+            continue;
+        }
+
+        let Some(scope) = index.scope_at(reference.range.start()) else {
+            continue;
+        };
+
+        if scope.kind != sneklsp_index::ScopeKind::Function {
+            continue;
+        }
+
+        let parent_id = match scope.parent {
+            Some(p) => p,
+            None => continue,
+        };
+
+        let Some(parent_scope) = index.scope(parent_id) else {
+            continue;
+        };
+
+        let caller = parent_scope.symbols.iter().find_map(|&sym_id| {
+            let sym = index.symbol(sym_id)?;
+            if matches!(
+                sym.kind,
+                sneklsp_index::SymbolKind::Function | sneklsp_index::SymbolKind::Method
+            ) && sym.range == scope.range
+            {
+                Some(sym)
+            } else {
+                None
+            }
+        });
+
+        let Some(caller_sym) = caller else {
+            continue;
+        };
+
+        let caller_name = index.symbol_name(caller_sym).to_string();
+
+        calls.push(CallHierarchyIncomingCall {
+            from: CallHierarchyItem {
+                name: caller_name,
+                kind: to_lsp_symbol_kind(caller_sym.kind),
+                tags: None,
+                detail: scope_container_name(index, caller_sym),
+                uri: uri.clone(),
+                range: to_lsp_range(caller_sym.range, line_index),
+                selection_range: to_lsp_range(caller_sym.selection_range, line_index),
+                data: None,
+            },
+            from_ranges: vec![to_lsp_range(reference.range, line_index)],
+        });
+    }
+}
+
+pub fn handle_outgoing_calls(
+    params: CallHierarchyOutgoingCallsParams,
+    documents: &HashMap<Uri, DocumentState>,
+) -> Option<Vec<CallHierarchyOutgoingCall>> {
+    let item = &params.item;
+    let uri = &item.uri;
+
+    let query = get_document_query(uri, documents)?;
+    let symbol_id: u32 = item
+        .data
+        .as_ref()
+        .and_then(|d| serde_json::from_value(d.clone()).ok())?;
+    let symbol = query.index.symbol(symbol_id)?;
+
+    let func_scope = query
+        .index
+        .scopes()
+        .iter()
+        .find(|s| s.kind == sneklsp_index::ScopeKind::Function && s.range == symbol.range)?;
+
+    let mut calls = Vec::new();
+
+    for reference in query.index.references() {
+        if !symbol.range.contains(reference.range.start()) {
+            continue; // reference not in function range
+        }
+
+        let Some(resolved_id) = reference.resolved else {
+            continue;
+        };
+
+        let Some(target) = query.index.symbol(resolved_id) else {
+            continue;
+        };
+
+        if !matches!(
+            target.kind,
+            sneklsp_index::SymbolKind::Function
+                | sneklsp_index::SymbolKind::Method
+                | sneklsp_index::SymbolKind::Class
+        ) {
+            continue;
+        }
+
+        let target_name = query.index.symbol_name(target).to_string();
+
+        calls.push(CallHierarchyOutgoingCall {
+            to: CallHierarchyItem {
+                name: target_name,
+                kind: to_lsp_symbol_kind(target.kind),
+                tags: None,
+                detail: scope_container_name(query.index, target),
+                uri: uri.clone(),
+                range: to_lsp_range(target.range, query.line_index),
+                selection_range: to_lsp_range(target.selection_range, query.line_index),
+                data: Some(serde_json::to_value(target.id).unwrap()),
+            },
+            from_ranges: vec![to_lsp_range(reference.range, query.line_index)],
+        });
+    }
+
+    if calls.is_empty() { None } else { Some(calls) }
 }
 
 pub fn handle_document_symbol(
