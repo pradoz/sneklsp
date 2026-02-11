@@ -97,29 +97,17 @@ pub fn parse_file_recovering(db: &dyn salsa::Database, file: File) -> FileAnalys
     let path = file.path(db);
     tracing::debug!(path = %path, "full analysis");
 
-    let line_index = LineIndex::new(content);
-    let arena = sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
-    let output = sneklsp_parser::parse_recovering(content, &arena);
-
-    let errors: Vec<SerializedParseError> = output
+    let analyzed = sneklsp_index::analyze_source(content);
+    let errors: Vec<SerializedParseError> = analyzed
         .errors
         .iter()
         .map(SerializedParseError::from)
         .collect();
 
-    let index = if !output.module.body.is_empty() || output.errors.is_empty() {
-        let idx = sneklsp_index::index_module(content, &output.module);
-        Some(OwnedIndex::new(content.to_string(), &idx))
-    } else {
-        None
-    };
-
-    let tokens = sneklsp_lexer::tokenize(content);
-
     FileAnalysis {
-        index,
-        line_index,
-        tokens,
+        index: analyzed.index,
+        line_index: analyzed.line_index,
+        tokens: analyzed.tokens,
         errors,
     }
 }

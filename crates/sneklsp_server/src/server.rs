@@ -177,26 +177,14 @@ impl Server {
                         Err(_) => continue,
                     };
 
-                    let line_index = sneklsp_text::LineIndex::new(&content);
-                    let arena =
-                        sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
-                    let output = sneklsp_parser::parse_recovering(&content, &arena);
-
-                    let index = if !output.module.body.is_empty() || output.errors.is_empty() {
-                        let idx = sneklsp_index::index_module(&content, &output.module);
-                        Some(sneklsp_index::OwnedIndex::new(content.clone(), &idx))
-                    } else {
-                        None
-                    };
-
-                    let tokens = sneklsp_lexer::tokenize(&content);
+                    let analyzed = sneklsp_index::analyze_source(&content);
 
                     let _ = tx.send((
                         file_id,
                         sneklsp_workspace::FileState {
-                            index,
-                            line_index,
-                            tokens,
+                            index: analyzed.index,
+                            line_index: analyzed.line_index,
+                            tokens: analyzed.tokens,
                             version: None,
                         },
                     ));

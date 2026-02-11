@@ -1,7 +1,6 @@
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 
-use sneklsp_ast::AstArena;
 use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::Token;
 use sneklsp_text::LineIndex;
@@ -66,27 +65,14 @@ impl Workspace {
             None => return false,
         };
 
-        let line_index = LineIndex::new(&content);
-        let arena_size = (content.len() * 50).max(4096);
-        let arena = AstArena::with_capacity(arena_size);
-
-        let output = sneklsp_parser::parse_recovering(&content, &arena);
-
-        let index = if !output.module.body.is_empty() || output.errors.is_empty() {
-            let idx = sneklsp_index::index_module(&content, &output.module);
-            Some(OwnedIndex::new(content.to_string(), &idx))
-        } else {
-            None
-        };
-
-        let tokens = sneklsp_lexer::tokenize(&content);
+        let analyzed = sneklsp_index::analyze_source(&content);
 
         self.files.insert(
             file_id,
             FileState {
-                index,
-                line_index,
-                tokens,
+                index: analyzed.index,
+                line_index: analyzed.line_index,
+                tokens: analyzed.tokens,
                 version: self.vfs.version(file_id),
             },
         );
