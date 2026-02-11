@@ -243,6 +243,10 @@ impl<'src> Indexer<'src> {
     fn visit_assign_target(&mut self, target: Expression<'src>) {
         match target {
             Expression::Name(name) => {
+                if name.id.is_empty() {
+                    return;
+                }
+
                 // if already defined in scope, it's a reassignment - no new symbol
                 let existing = self.index.resolve_name(name.id, self.current_scope);
                 let is_in_new_scope = existing.map_or(true, |sym| {
@@ -517,6 +521,9 @@ impl<'src> Indexer<'src> {
     }
 
     fn visit_name(&mut self, name: &NameExpr<'src>) {
+        if name.id.is_empty() {
+            return;
+        }
         let resolved = self.index.resolve_name(name.id, self.current_scope);
         self.index.add_reference(name.id, name.range, resolved);
     }

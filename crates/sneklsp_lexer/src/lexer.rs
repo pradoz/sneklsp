@@ -76,7 +76,7 @@ impl<'src> Lexer<'src> {
                 TokenKind::LParen
             }
             b')' => {
-                self.bracket_depth = self.bracket_depth.saturating_sub(1);
+                self.decrement_bracket_depth();
                 TokenKind::RParen
             }
             b'[' => {
@@ -84,7 +84,7 @@ impl<'src> Lexer<'src> {
                 TokenKind::LBracket
             }
             b']' => {
-                self.bracket_depth = self.bracket_depth.saturating_sub(1);
+                self.decrement_bracket_depth();
                 TokenKind::RBracket
             }
             b'{' => {
@@ -92,7 +92,7 @@ impl<'src> Lexer<'src> {
                 TokenKind::LBrace
             }
             b'}' => {
-                self.bracket_depth = self.bracket_depth.saturating_sub(1);
+                self.decrement_bracket_depth();
                 TokenKind::RBrace
             }
             b':' => {
@@ -243,6 +243,10 @@ impl<'src> Lexer<'src> {
         };
 
         self.make_token(kind, start, self.position)
+    }
+
+    pub fn decrement_bracket_depth(&mut self) {
+        self.bracket_depth = self.bracket_depth.saturating_sub(1);
     }
 
     fn handle_indentation(&mut self) -> Option<Token> {

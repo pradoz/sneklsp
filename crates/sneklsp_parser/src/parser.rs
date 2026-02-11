@@ -148,8 +148,60 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             || self.check(TokenKind::Dedent)
         {
             Ok(())
+        } else if self.mode == ParseMode::Recovering && self.is_stmt_start() {
+            Ok(())
         } else {
             Err(self.err("newline"))
+        }
+    }
+
+    fn expect_recover(&mut self, kind: TokenKind) {
+        if !self.consume(kind) && self.mode == ParseMode::Recovering {
+            self.errors.push(self.err(&format!("{kind:?}")));
+        }
+    }
+
+    // recover from unclosed brackets by assuming close
+    fn expect_close(&mut self, kind: TokenKind) -> ParseResult<()> {
+        if self.consume(kind) {
+            return Ok(());
+        }
+
+        if self.mode == ParseMode::Recovering {
+            self.errors.push(self.err(&format!("{kind:?}")));
+            if matches!(
+                kind,
+                TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace
+            ) {
+                self.lexer.decrement_bracket_depth();
+            }
+            return Ok(());
+        }
+
+        Err(self.err(&format!("{kind:?}")))
+    }
+
+    fn missing_expr(&self) -> Expression<'ast> {
+        let pos = self.current.range.start();
+        let range = TextRange::new(pos, pos);
+        Expression::Name(self.arena.alloc(NameExpr {
+            id: self.arena.alloc_str(""),
+            range,
+        }))
+    }
+
+    // try to parse an expression. fall back to missing placeholder in recovery mode
+    fn parse_expr_or_missing(&mut self) -> ParseResult<Expression<'ast>> {
+        match self.parse_expr() {
+            Ok(expr) => Ok(expr),
+            Err(e) => {
+                if self.mode == ParseMode::Recovering {
+                    self.errors.push(e);
+                    Ok(self.missing_expr())
+                } else {
+                    Err(e)
+                }
+            }
         }
     }
 
@@ -408,7 +460,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
 
     fn parse_else(&mut self) -> ParseResult<&'ast [Statement<'ast>]> {
         if self.consume(TokenKind::Else) {
-            self.expect(TokenKind::Colon)?;
+            self.expect_recover(TokenKind::Colon);
             self.parse_block()
         } else {
             Ok(self.empty_slice())
@@ -475,9 +527,9 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let name = self.parse_identifier()?;
         self.expect(TokenKind::LParen)?;
         let params = self.parse_params()?;
-        self.expect(TokenKind::RParen)?;
+        self.expect_close(TokenKind::RParen)?;
         let returns = self.opt(TokenKind::Arrow, Self::parse_expr)?;
-        self.expect(TokenKind::Colon)?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         Ok((name, params, returns, body))
     }
@@ -584,12 +636,12 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let name = self.parse_identifier()?;
         let (bases, keywords) = if self.consume(TokenKind::LParen) {
             let r = self.parse_class_args()?;
-            self.expect(TokenKind::RParen)?;
+            self.expect_close(TokenKind::RParen)?;
             r
         } else {
             (self.empty_slice(), self.empty_slice())
         };
-        self.expect(TokenKind::Colon)?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         Ok(Statement::ClassDef(self.arena.alloc(ClassDef {
             name,
@@ -659,8 +711,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     }
 
     fn parse_if_inner(&mut self, start: TextSize) -> ParseResult<Statement<'ast>> {
-        let test = self.parse_expr()?;
-        self.expect(TokenKind::Colon)?;
+        let test = self.parse_expr_or_missing()?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         let orelse = if self.consume(TokenKind::Elif) {
             self.arena.alloc_slice([self.parse_if_inner(start)?])
@@ -677,10 +729,10 @@ impl<'src, 'ast> Parser<'src, 'ast> {
 
     fn parse_for(&mut self, is_async: bool, start: TextSize) -> ParseResult<Statement<'ast>> {
         self.expect(TokenKind::For)?;
-        let target = self.parse_expr()?;
+        let target = self.parse_expr_or_missing()?;
         self.expect(TokenKind::In)?;
-        let iter = self.parse_expr()?;
-        self.expect(TokenKind::Colon)?;
+        let iter = self.parse_expr_or_missing()?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         let orelse = self.parse_else()?;
         Ok(Statement::For(self.arena.alloc(ForStmt {
@@ -696,8 +748,8 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     fn parse_while(&mut self) -> ParseResult<Statement<'ast>> {
         let start = self.start();
         self.expect(TokenKind::While)?;
-        let test = self.parse_expr()?;
-        self.expect(TokenKind::Colon)?;
+        let test = self.parse_expr_or_missing()?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         let orelse = self.parse_else()?;
         Ok(Statement::While(self.arena.alloc(WhileStmt {
@@ -711,20 +763,20 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     fn parse_try(&mut self) -> ParseResult<Statement<'ast>> {
         let start = self.start();
         self.expect(TokenKind::Try)?;
-        self.expect(TokenKind::Colon)?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         let mut handlers = Vec::new();
         while self.check(TokenKind::Except) {
             handlers.push(self.parse_except()?);
         }
         let orelse = if self.consume(TokenKind::Else) {
-            self.expect(TokenKind::Colon)?;
+            self.expect_recover(TokenKind::Colon);
             self.parse_block()?
         } else {
             self.empty_slice()
         };
         let finalbody = if self.consume(TokenKind::Finally) {
-            self.expect(TokenKind::Colon)?;
+            self.expect_recover(TokenKind::Colon);
             self.parse_block()?
         } else {
             self.empty_slice()
@@ -749,7 +801,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 self.opt(TokenKind::As, Self::parse_identifier)?,
             )
         };
-        self.expect(TokenKind::Colon)?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         Ok(ExceptHandler {
             typ,
@@ -771,7 +823,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 range: p.range(s),
             })
         })?;
-        self.expect(TokenKind::Colon)?;
+        self.expect_recover(TokenKind::Colon);
         let body = self.parse_block()?;
         let items = self.arena.alloc_slice(items);
         Ok(Statement::With(self.arena.alloc(WithStmt {
@@ -869,7 +921,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     range: p.range(s),
                 })
             })?;
-            self.expect(TokenKind::RParen)?;
+            self.expect_close(TokenKind::RParen)?;
             self.arena.alloc_slice(aliases)
         } else {
             self.parse_aliases()?
@@ -1223,7 +1275,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         loop {
             if self.consume(TokenKind::LParen) {
                 let (args, keywords) = self.parse_call_args()?;
-                self.expect(TokenKind::RParen)?;
+                self.expect_close(TokenKind::RParen)?;
                 e = Expression::Call(self.arena.alloc(CallExpr {
                     func: e,
                     args,
@@ -1239,7 +1291,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 }));
             } else if self.consume(TokenKind::LBracket) {
                 let slice = self.parse_slice()?;
-                self.expect(TokenKind::RBracket)?;
+                self.expect_close(TokenKind::RBracket)?;
                 e = Expression::Subscript(self.arena.alloc(SubscriptExpr {
                     value: e,
                     slice,
@@ -1342,13 +1394,13 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
         if self.check(TokenKind::Yield) {
             let e = self.parse_yield()?;
-            self.expect(TokenKind::RParen)?;
+            self.expect_close(TokenKind::RParen)?;
             return Ok(e);
         }
         let first = self.parse_named()?;
         if self.check(TokenKind::For) || self.check(TokenKind::Async) {
             let gens = self.parse_comp_clauses()?;
-            self.expect(TokenKind::RParen)?;
+            self.expect_close(TokenKind::RParen)?;
             return Ok(Expression::GeneratorExp(self.arena.alloc(GeneratorExpr {
                 elt: first,
                 generators: gens,
@@ -1360,7 +1412,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             if !self.check(TokenKind::RParen) {
                 elts.extend(self.comma_list(TokenKind::RParen, Self::parse_expr)?);
             }
-            self.expect(TokenKind::RParen)?;
+            self.expect_close(TokenKind::RParen)?;
             return Ok(Expression::Tuple(self.arena.alloc(TupleExpr {
                 elts: self.arena.alloc_slice(elts),
                 range: self.range(start),
@@ -1383,7 +1435,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         let first = self.parse_named()?;
         if self.check(TokenKind::For) || self.check(TokenKind::Async) {
             let gens = self.parse_comp_clauses()?;
-            self.expect(TokenKind::RBracket)?;
+            self.expect_close(TokenKind::RBracket)?;
             return Ok(Expression::ListComp(self.arena.alloc(ListCompExpr {
                 elt: first,
                 generators: gens,
@@ -1394,7 +1446,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         if self.consume(TokenKind::Comma) && !self.check(TokenKind::RBracket) {
             elts.extend(self.comma_list(TokenKind::RBracket, Self::parse_named)?);
         }
-        self.expect(TokenKind::RBracket)?;
+        self.expect_close(TokenKind::RBracket)?;
         Ok(Expression::List(self.arena.alloc(ListExpr {
             elts: self.arena.alloc_slice(elts),
             range: self.range(start),
@@ -1421,7 +1473,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             let fv = self.parse_named()?;
             if self.check(TokenKind::For) || self.check(TokenKind::Async) {
                 let gens = self.parse_comp_clauses()?;
-                self.expect(TokenKind::RBrace)?;
+                self.expect_close(TokenKind::RBrace)?;
                 return Ok(Expression::DictComp(self.arena.alloc(DictCompExpr {
                     key: first,
                     value: fv,
@@ -1440,7 +1492,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     vals.push(self.parse_named()?);
                 }
             }
-            self.expect(TokenKind::RBrace)?;
+            self.expect_close(TokenKind::RBrace)?;
             return Ok(Expression::Dict(self.arena.alloc(DictExpr {
                 keys: self.arena.alloc_slice(keys),
                 values: self.arena.alloc_slice(vals),
@@ -1449,7 +1501,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         }
         if self.check(TokenKind::For) || self.check(TokenKind::Async) {
             let gens = self.parse_comp_clauses()?;
-            self.expect(TokenKind::RBrace)?;
+            self.expect_close(TokenKind::RBrace)?;
             return Ok(Expression::SetComp(self.arena.alloc(SetCompExpr {
                 elt: first,
                 generators: gens,
@@ -1460,7 +1512,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
         while self.consume(TokenKind::Comma) && !self.check(TokenKind::RBrace) {
             elts.push(self.parse_named()?);
         }
-        self.expect(TokenKind::RBrace)?;
+        self.expect_close(TokenKind::RBrace)?;
         Ok(Expression::Set(self.arena.alloc(SetExpr {
             elts: self.arena.alloc_slice(elts),
             range: self.range(start),
@@ -1483,7 +1535,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                 break;
             }
         }
-        self.expect(TokenKind::RBrace)?;
+        self.expect_close(TokenKind::RBrace)?;
         Ok(Expression::Dict(self.arena.alloc(DictExpr {
             keys: self.arena.alloc_slice(keys),
             values: self.arena.alloc_slice(vals),

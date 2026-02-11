@@ -126,6 +126,80 @@ mod tests {
             assert!(!output.module.body.is_empty());
             assert!(!output.errors.is_empty());
         }
+
+        #[test]
+        fn missing_colon_function() {
+            let arena = AstArena::new();
+            let source = "def foo()\n    pass\nx = 1";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            // should still parse the function and the assignment after it
+            assert!(output.module.body.len() >= 2);
+        }
+
+        #[test]
+        fn missing_colon_if() {
+            let arena = AstArena::new();
+            let source = "if True\n    x = 1\ny = 2";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            assert!(output.module.body.len() >= 2);
+        }
+
+        #[test]
+        fn missing_colon_class() {
+            let arena = AstArena::new();
+            let source = "class Foo\n    pass\nx = 1";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            assert!(output.module.body.len() >= 2);
+        }
+
+        #[test]
+        fn unclosed_paren_call() {
+            let arena = AstArena::new();
+            let source = "foo(a, b\nx = 1";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            assert!(!output.module.body.is_empty());
+        }
+
+        #[test]
+        fn unclosed_bracket_list() {
+            let arena = AstArena::new();
+            let source = "x = [1, 2\ny = 3";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            assert!(!output.module.body.is_empty());
+        }
+
+        #[test]
+        fn missing_if_condition() {
+            let arena = AstArena::new();
+            let source = "if :\n    pass\nx = 1";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            assert!(output.module.body.len() >= 2);
+        }
+
+        #[test]
+        fn missing_for_target() {
+            let arena = AstArena::new();
+            let source = "for in range(10):\n    pass";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            assert!(!output.module.body.is_empty());
+        }
+
+        #[test]
+        fn incomplete_assignment() {
+            let arena = AstArena::new();
+            let source = "x = \ny = 2";
+            let output = parse_recovering(source, &arena);
+            assert!(!output.errors.is_empty());
+            // should recover and parse y = 2
+            assert!(!output.module.body.is_empty());
+        }
     }
 
     mod snapshot {
