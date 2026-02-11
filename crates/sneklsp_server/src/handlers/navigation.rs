@@ -16,7 +16,7 @@ use crate::analysis::AnalysisHost;
 use crate::server::DocumentState;
 use sneklsp_index::{OwnedIndex, SymbolData};
 use sneklsp_text::LineIndex;
-use sneklsp_workspace::{ImportResolver, Workspace};
+use sneklsp_workspace::Workspace;
 
 pub fn handle_goto_definition(
     params: GotoDefinitionParams,
@@ -29,17 +29,14 @@ pub fn handle_goto_definition(
 
     let query = get_document_query(&uri, documents)?;
     let offset = from_lsp_position(pos, query.line_index)?;
-
     let symbol = query.find_symbol_at(offset)?;
 
     if matches!(
         symbol.kind,
         sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
     ) {
-        if let Some(location) = resolve_import_via_salsa(symbol, query.index, analysis) {
-            return Some(GotoDefinitionResponse::Scalar(location));
-        }
-        if let Some(location) = resolve_import_definition(symbol, query.index, workspace) {
+        if let Some(location) = resolve_import_definition(symbol, query.index, workspace, analysis)
+        {
             return Some(GotoDefinitionResponse::Scalar(location));
         }
     }
@@ -49,72 +46,38 @@ pub fn handle_goto_definition(
     ))
 }
 
-fn resolve_import_via_salsa(
+fn resolve_import_definition(
     symbol: &SymbolData,
     index: &OwnedIndex,
+    workspace: &Workspace,
     analysis: &AnalysisHost,
 ) -> Option<Location> {
     let name = index.symbol_name(symbol);
 
     if symbol.kind == sneklsp_index::SymbolKind::Import {
-        let target_file = analysis.resolve_module_file(name)?;
-        let path = target_file.path(analysis.db());
-        let target_uri: Uri = format!("file://{}", path).parse().ok()?;
-
-        return Some(Location {
-            uri: target_uri,
-            range: Range {
-                start: Position {
-                    line: 0,
-                    character: 0,
+        // try salsa module resolution first
+        if let Some(target_file) = analysis.resolve_module_file(name) {
+            let path = target_file.path(analysis.db());
+            let target_uri: Uri = format!("file://{}", path).parse().ok()?;
+            return Some(Location {
+                uri: target_uri,
+                range: Range {
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
-                end: Position {
-                    line: 0,
-                    character: 0,
-                },
-            },
-        });
-    }
-
-    if symbol.kind == sneklsp_index::SymbolKind::ImportedSymbol {
-        for file_id in analysis.file_ids() {
-            let Some(exports) = analysis.exported_symbols(file_id) else {
-                continue;
-            };
-
-            for export in exports {
-                if export.name == name {
-                    let target_file_salsa = analysis.file_for_id(file_id)?;
-                    let path = target_file_salsa.path(analysis.db());
-                    let target_uri: Uri = format!("file://{}", path).parse().ok()?;
-                    let line_index = analysis.line_index(file_id)?;
-                    let range = to_lsp_range(export.range, line_index);
-
-                    return Some(Location {
-                        uri: target_uri,
-                        range,
-                    });
-                }
-            }
+            });
         }
-    }
 
-    None
-}
-
-fn resolve_import_definition(
-    symbol: &SymbolData,
-    index: &OwnedIndex,
-    workspace: &Workspace,
-) -> Option<Location> {
-    let resolver = ImportResolver::new(workspace);
-    let name = index.symbol_name(symbol);
-
-    if symbol.kind == sneklsp_index::SymbolKind::Import {
-        let resolved = resolver.resolve_import(name)?;
-        let target_path = workspace.vfs.file_path(resolved.file_id);
+        // fallback: check if workspace module map -> vfs path
+        let file_id = workspace.resolve_module(name)?;
+        let target_path = workspace.vfs.file_path(file_id);
         let target_uri = target_path.to_uri()?;
-
         return Some(Location {
             uri: target_uri,
             range: Range {
@@ -131,20 +94,22 @@ fn resolve_import_definition(
     }
 
     if symbol.kind == sneklsp_index::SymbolKind::ImportedSymbol {
-        let results = workspace.find_exported_symbol(name);
+        for (file_id, _symbol_id) in analysis.find_exported_symbol(name) {
+            let target_file = analysis.file_for_id(file_id)?;
+            let path = target_file.path(analysis.db());
+            let target_uri: Uri = format!("file://{}", path).parse().ok()?;
 
-        for (file_id, symbol_id) in results {
-            let target_path = workspace.vfs.file_path(file_id);
-            let target_uri = target_path.to_uri()?;
-            let target_state = workspace.get_file_state(file_id)?;
-            let target_index = target_state.index.as_ref()?;
-            let target_line_index = &target_state.line_index;
-
-            if let Some(target_sym) = target_index.symbol(symbol_id) {
-                return Some(Location {
-                    uri: target_uri,
-                    range: to_lsp_range(target_sym.range, target_line_index),
-                });
+            if let Some(exports) = analysis.exported_symbols(file_id) {
+                for export in exports {
+                    if export.name == name {
+                        let line_index = analysis.line_index(file_id)?;
+                        let range = to_lsp_range(export.range, line_index);
+                        return Some(Location {
+                            uri: target_uri,
+                            range,
+                        });
+                    }
+                }
             }
         }
     }
@@ -278,11 +243,12 @@ pub fn handle_incoming_calls(
                 (Some(idx), li) => (idx, li),
                 _ => continue,
             }
-        } else if let Some(file_analysis) = analysis.analyze_file(file_id) {
-            match file_analysis.index.as_ref() {
-                Some(idx) => (idx, &file_analysis.line_index),
+        } else if let Some(idx) = analysis.file_index(file_id) {
+            let li = match analysis.file_line_index(file_id) {
+                Some(li) => li,
                 None => continue,
-            }
+            };
+            (idx, li)
         } else {
             continue;
         };
@@ -435,28 +401,9 @@ pub fn handle_workspace_symbol(
             continue;
         }
 
-        if let Some(file_analysis) = analysis.analyze_file(file_id) {
-            if let Some(ref index) = file_analysis.index {
-                collect_matching_symbols(
-                    index,
-                    &file_analysis.line_index,
-                    &file_uri,
-                    &query,
-                    &mut results,
-                );
-                continue;
-            }
-        }
-
-        if let Some(file_state) = workspace.get_file_state(file_id) {
-            if let Some(ref index) = file_state.index {
-                collect_matching_symbols(
-                    index,
-                    &file_state.line_index,
-                    &file_uri,
-                    &query,
-                    &mut results,
-                );
+        if let Some(index) = analysis.file_index(file_id) {
+            if let Some(line_index) = analysis.file_line_index(file_id) {
+                collect_matching_symbols(index, line_index, &file_uri, &query, &mut results);
             }
         }
     }

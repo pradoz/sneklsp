@@ -1,23 +1,12 @@
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 
-use sneklsp_index::OwnedIndex;
-use sneklsp_lexer::Token;
-use sneklsp_text::LineIndex;
 use sneklsp_vfs::{FileId, Vfs, VfsPath};
 
 use crate::discovery::discover_python_files;
 
-pub struct FileState {
-    pub index: Option<OwnedIndex>,
-    pub line_index: LineIndex,
-    pub tokens: Vec<Token>,
-    pub version: Option<i32>,
-}
-
 pub struct Workspace {
     pub vfs: Vfs,
-    files: FxHashMap<FileId, FileState>,
     module_map: FxHashMap<String, FileId>,
     roots: Vec<VfsPath>,
 }
@@ -26,7 +15,6 @@ impl Workspace {
     pub fn new() -> Self {
         Self {
             vfs: Vfs::new(),
-            files: FxHashMap::default(),
             module_map: FxHashMap::default(),
             roots: Vec::new(),
         }
@@ -59,45 +47,6 @@ impl Workspace {
         file_ids
     }
 
-    pub fn index_file(&mut self, file_id: FileId) -> bool {
-        let content = match self.vfs.read(file_id) {
-            Some(c) => c,
-            None => return false,
-        };
-
-        let analyzed = sneklsp_index::analyze_source(&content);
-
-        self.files.insert(
-            file_id,
-            FileState {
-                index: analyzed.index,
-                line_index: analyzed.line_index,
-                tokens: analyzed.tokens,
-                version: self.vfs.version(file_id),
-            },
-        );
-
-        true
-    }
-
-    pub fn set_file_state(&mut self, id: FileId, state: FileState) {
-        self.files.insert(id, state);
-    }
-
-    #[inline]
-    pub fn get_file_state(&self, id: FileId) -> Option<&FileState> {
-        self.files.get(&id)
-    }
-
-    #[inline]
-    pub fn file_state_mut(&mut self, id: FileId) -> Option<&mut FileState> {
-        self.files.get_mut(&id)
-    }
-
-    pub fn remove_file_state(&mut self, id: FileId) {
-        self.files.remove(&id);
-    }
-
     #[inline]
     pub fn resolve_module(&self, module_name: &str) -> Option<FileId> {
         self.module_map.get(module_name).copied()
@@ -123,33 +72,6 @@ impl Workspace {
     #[inline]
     pub fn roots(&self) -> &[VfsPath] {
         &self.roots
-    }
-
-    pub fn indexed_files(&self) -> impl Iterator<Item = FileId> + '_ {
-        self.files.keys().copied()
-    }
-
-    pub fn find_exported_symbol(&self, name: &str) -> Vec<(FileId, u32)> {
-        let mut results = Vec::new();
-
-        for (&file_id, state) in &self.files {
-            if let Some(ref index) = state.index {
-                if let Some(root_scope) = index.root_scope() {
-                    for &sym_id in &root_scope.symbols {
-                        if let Some(symbol) = index.symbol(sym_id) {
-                            if index.symbol_name(symbol) == name
-                                && symbol.visibility != sneklsp_index::Visibility::Private
-                                && symbol.visibility != sneklsp_index::Visibility::DunderPrivate
-                            {
-                                results.push((file_id, sym_id));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        results
     }
 }
 

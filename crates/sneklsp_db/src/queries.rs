@@ -55,8 +55,11 @@ pub struct FileAnalysis {
 }
 
 impl PartialEq for FileAnalysis {
-    fn eq(&self, _other: &Self) -> bool {
-        false
+    fn eq(&self, other: &Self) -> bool {
+        self.errors == other.errors
+            && self.tokens == other.tokens
+            && self.index == other.index
+            && self.line_index == other.line_index
     }
 }
 

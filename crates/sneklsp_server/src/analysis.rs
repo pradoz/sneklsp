@@ -5,6 +5,7 @@ use sneklsp_db::{
     Database, ExportedSymbol, File, FileAnalysis, ModuleEntry, ModuleGraph, ModuleName,
     file_exported_symbols, file_line_index, parse_file_recovering, resolve_module,
 };
+use sneklsp_index::OwnedIndex;
 use sneklsp_text::LineIndex;
 use sneklsp_vfs::FileId;
 
@@ -93,6 +94,28 @@ impl AnalysisHost {
     pub fn analyze_file(&self, file_id: FileId) -> Option<&FileAnalysis> {
         let file = self.file_map.get(&file_id)?;
         Some(parse_file_recovering(&self.db, *file))
+    }
+
+    pub fn file_index(&self, file_id: FileId) -> Option<&OwnedIndex> {
+        self.analyze_file(file_id)?.index.as_ref()
+    }
+
+    pub fn file_line_index(&self, file_id: FileId) -> Option<&LineIndex> {
+        let file = self.file_map.get(&file_id)?;
+        Some(file_line_index(&self.db, *file))
+    }
+
+    pub fn find_exported_symbol(&self, name: &str) -> Vec<(FileId, u32)> {
+        let mut results = Vec::new();
+        for (&file_id, &file) in &self.file_map {
+            let exports = file_exported_symbols(&self.db, file);
+            for export in exports {
+                if export.name == name {
+                    results.push((file_id, export.symbol_id));
+                }
+            }
+        }
+        results
     }
 
     pub fn file_ids(&self) -> impl Iterator<Item = FileId> + '_ {

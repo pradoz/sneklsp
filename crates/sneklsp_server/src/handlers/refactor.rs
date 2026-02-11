@@ -84,11 +84,11 @@ fn find_cross_file_edits(
         }
 
         let edits = collect_edits_in_file(
-            file_id,
             symbol_name,
             new_name,
             &file_uri,
-            workspace,
+            file_id,
+            analysis,
             documents,
         );
 
@@ -99,11 +99,11 @@ fn find_cross_file_edits(
 }
 
 fn collect_edits_in_file(
-    file_id: FileId,
     symbol_name: &str,
     new_name: &str,
     file_uri: &Uri,
-    workspace: &Workspace,
+    file_id: FileId,
+    analysis: &AnalysisHost,
     documents: &HashMap<Uri, DocumentState>,
 ) -> Vec<TextEdit> {
     let (index, line_index) = if let Some(state) = documents.get(file_uri) {
@@ -111,9 +111,9 @@ fn collect_edits_in_file(
             (Some(idx), li) => (idx, li),
             _ => return Vec::new(),
         }
-    } else if let Some(state) = workspace.get_file_state(file_id) {
-        match state.index.as_ref() {
-            Some(idx) => (idx, &state.line_index),
+    } else if let Some(idx) = analysis.file_index(file_id) {
+        match analysis.file_line_index(file_id) {
+            Some(li) => (idx, li),
             None => return Vec::new(),
         }
     } else {

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossbeam_channel::{Receiver, select, tick};
+use crossbeam_channel::{Receiver, TryRecvError, select, tick};
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
     DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
@@ -27,7 +27,7 @@ use crate::debouncer::Debouncer;
 use crate::document::Document;
 use crate::handlers;
 use sneklsp_vfs::{FileId, VfsPath};
-use sneklsp_workspace::{FileState, Workspace};
+use sneklsp_workspace::Workspace;
 
 pub fn run_server() -> Result<()> {
     tracing::info!("starting sneklsp server");
@@ -129,7 +129,7 @@ struct Server {
     documents: HashMap<Uri, DocumentState>,
     workspace: Workspace,
     debouncer: Debouncer,
-    workspace_index_rx: Option<Receiver<(FileId, FileState)>>,
+    workspace_index_rx: Option<Receiver<(FileId, String, String)>>,
     analysis: AnalysisHost,
 }
 
@@ -168,7 +168,7 @@ impl Server {
         self.workspace_index_rx = Some(rx);
 
         std::thread::Builder::new()
-            .name("sneklsp-workspace-index".to_string())
+            .name("sneklsp-workspace-load".to_string())
             .spawn(move || {
                 for (file_id, path) in files {
                     // read from disk on background thread
@@ -177,17 +177,8 @@ impl Server {
                         Err(_) => continue,
                     };
 
-                    let analyzed = sneklsp_index::analyze_source(&content);
-
-                    let _ = tx.send((
-                        file_id,
-                        sneklsp_workspace::FileState {
-                            index: analyzed.index,
-                            line_index: analyzed.line_index,
-                            tokens: analyzed.tokens,
-                            version: None,
-                        },
-                    ));
+                    let path_str = path.display().to_string();
+                    let _ = tx.send((file_id, path_str, content));
                 }
                 tracing::info!("background workspace indexing complete");
             })
@@ -195,46 +186,45 @@ impl Server {
     }
 
     fn drain_workspace_index(&mut self) {
-        let done = if let Some(ref rx) = self.workspace_index_rx {
-            // drain without blocking, process whatever is ready
+        let mut done = false;
+
+        if let Some(ref rx) = self.workspace_index_rx {
             let mut count = 0;
-            while let Ok((file_id, state)) = rx.try_recv() {
-                self.workspace.set_file_state(file_id, state);
-
-                let vfs_path = self.workspace.vfs.file_path(file_id);
-                let path_str = vfs_path.as_path().display().to_string();
-
-                if let Some(content) = self.workspace.vfs.read(file_id) {
-                    if let Some(module_name) = self.workspace.resolve_module_name(file_id) {
-                        self.analysis.queue_module(
-                            file_id,
-                            module_name,
-                            path_str,
-                            content.to_string(),
-                        );
-                    } else {
-                        self.analysis
-                            .set_file_content(file_id, &path_str, content.to_string());
+            loop {
+                match rx.try_recv() {
+                    Ok((file_id, path, content)) => {
+                        if let Some(module_name) = self.workspace.resolve_module_name(file_id) {
+                            self.analysis
+                                .queue_module(file_id, module_name, path, content);
+                        } else {
+                            self.analysis.set_file_content(file_id, &path, content);
+                        }
+                        count += 1;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        done = true;
+                        break;
                     }
                 }
-
-                count += 1;
             }
 
             if count > 0 {
-                // flush queued modules in one batch
                 self.analysis.flush_modules();
-                tracing::debug!(count, "drained workspace index results");
+                tracing::debug!(count, "loaded workspace files into salsa");
             }
 
-            // channel empty + sender dropped = done
-            rx.is_empty() && rx.len() == 0
-        } else {
-            false
-        };
+            if !done && rx.is_empty() {
+                // peek disconnection
+                if matches!(rx.try_recv(), Err(TryRecvError::Disconnected)) {
+                    done = true;
+                }
+            }
+        }
 
         if done {
             self.workspace_index_rx = None;
+            tracing::info!("background file loading finished");
         }
     }
 
@@ -627,20 +617,37 @@ impl Server {
             match change.typ {
                 FileChangeType::CREATED | FileChangeType::CHANGED => {
                     if let Some(file_id) = self.workspace.file_id_for_uri(&uri) {
-                        tracing::debug!(?uri, "re-indexing changed file");
-                        self.workspace.index_file(file_id);
+                        tracing::debug!(?uri, "re-reading changed file into salsa");
+                        let path = self
+                            .workspace
+                            .vfs
+                            .file_path(file_id)
+                            .as_path()
+                            .display()
+                            .to_string();
+                        if let Some(content) = self.workspace.vfs.read(file_id) {
+                            if let Some(module_name) = self.workspace.resolve_module_name(file_id) {
+                                self.analysis.queue_module(
+                                    file_id,
+                                    module_name,
+                                    path,
+                                    content.to_string(),
+                                );
+                            } else {
+                                self.analysis
+                                    .set_file_content(file_id, &path, content.to_string());
+                            }
+                        }
                     }
                 }
                 FileChangeType::DELETED => {
-                    if let Some(file_id) = self.workspace.file_id_for_uri(&uri) {
-                        tracing::debug!(?uri, "removing deleted file");
-                        self.workspace.remove_file_state(file_id);
-                    }
+                    tracing::debug!(?uri, "file deleted");
                 }
                 _ => {}
             }
         }
 
+        self.analysis.flush_modules();
         Ok(())
     }
 
