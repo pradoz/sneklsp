@@ -444,7 +444,12 @@ impl Server {
 
             Completion::METHOD => {
                 let (id, params) = cast_request::<Completion>(req)?;
-                let result = handlers::handle_completion(params, &self.documents, &self.analysis);
+                let result = handlers::handle_completion(
+                    params,
+                    &self.documents,
+                    &self.analysis,
+                    &self.workspace,
+                );
                 self.send_response(id, result);
             }
 

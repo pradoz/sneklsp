@@ -8,6 +8,7 @@ use lsp_types::{
     SelectionRangeParams, SignatureHelp, SignatureHelpParams, SignatureInformation,
     SymbolInformation, SymbolKind, TextEdit, Uri, WorkspaceEdit, WorkspaceSymbolParams,
 };
+use rustc_hash::FxHashSet;
 use std::collections::{HashMap, HashSet};
 
 use crate::analysis::AnalysisHost;
@@ -1321,10 +1322,16 @@ fn line_range_for_symbol(symbol: &SymbolData, line_index: &LineIndex) -> Range {
     }
 }
 
+struct ImportContext {
+    insert_line: u32,
+    existing_imports: FxHashSet<String>,
+}
+
 pub fn handle_completion(
     params: CompletionParams,
     documents: &HashMap<Uri, DocumentState>,
     analysis: &AnalysisHost,
+    workspace: &Workspace,
 ) -> Option<CompletionResponse> {
     let uri = params.text_document_position.text_document.uri;
     let pos = params.text_document_position.position;
@@ -1339,7 +1346,10 @@ pub fn handle_completion(
     let scope = query.index.scope_at(offset);
     let scope_id = scope.map(|s| s.id);
     collect_visible_symbols(query.index, scope_id, &mut seen, &mut items);
-    collect_cross_file_completions(analysis, &mut seen, &mut items);
+
+    let import_ctx = build_import_context(query.index, query.line_index);
+    collect_cross_file_completions(analysis, workspace, &import_ctx, &mut seen, &mut items);
+
     add_builtin_completions(&mut seen, &mut items);
 
     if items.is_empty() {
@@ -1349,25 +1359,121 @@ pub fn handle_completion(
     }
 }
 
+fn build_import_context(index: &OwnedIndex, line_index: &LineIndex) -> ImportContext {
+    let mut last_import_line: Option<u32> = None;
+    let mut existing_imports = FxHashSet::default();
+
+    for symbol in index.symbols() {
+        match symbol.kind {
+            sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol => {
+                let name = index.symbol_name(symbol);
+                existing_imports.insert(name.to_string());
+
+                let end_pos = line_index.position(symbol.range.end());
+                match last_import_line {
+                    Some(line) if end_pos.line > line => {
+                        last_import_line = Some(end_pos.line);
+                    }
+                    None => {
+                        last_import_line = Some(end_pos.line);
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let insert_line = match last_import_line {
+        Some(line) => line + 1,
+        None => {
+            // no imports. insert after module docstring if present, otherwise at line 0
+            find_line_after_docstring(index, line_index)
+        }
+    };
+
+    ImportContext {
+        insert_line,
+        existing_imports,
+    }
+}
+
+fn find_line_after_docstring(index: &OwnedIndex, line_index: &LineIndex) -> u32 {
+    let source = index.source();
+    let trimmed = source.trim_start();
+
+    // check if file starts module docstring
+    if trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
+        let quote = &trimmed[..3];
+        if let Some(end) = trimmed[3..].find(quote) {
+            let docstring_end = (source.len() - trimmed.len()) + 3 + end + 3;
+            let pos = line_index.position(sneklsp_text::TextSize::new(docstring_end as u32));
+            return pos.line + 1;
+        }
+    } else if trimmed.starts_with('"') || trimmed.starts_with('\'') {
+        let quote = trimmed.as_bytes()[0];
+        if let Some(end) = trimmed[1..].find(|c: char| c as u8 == quote) {
+            let docstring_end = (source.len() - trimmed.len()) + 1 + end + 1;
+            let pos = line_index.position(sneklsp_text::TextSize::new(docstring_end as u32));
+            return pos.line + 1;
+        }
+    }
+
+    0
+}
+
+fn make_import_edit(module_name: &str, symbol_name: &str, insert_line: u32) -> TextEdit {
+    let import_text = format!("from {} import {}\n", module_name, symbol_name);
+    let position = Position {
+        line: insert_line,
+        character: 0,
+    };
+
+    TextEdit {
+        range: Range {
+            start: position,
+            end: position,
+        },
+        new_text: import_text,
+    }
+}
+
 fn collect_cross_file_completions(
     analysis: &AnalysisHost,
+    workspace: &Workspace,
+    import_ctx: &ImportContext,
     seen: &mut HashSet<String>,
     items: &mut Vec<CompletionItem>,
 ) {
     for file_id in analysis.file_ids() {
+        let Some(module_name) = workspace.resolve_module_name(file_id) else {
+            continue;
+        };
+
         let Some(exports) = analysis.exported_symbols(file_id) else {
             continue;
         };
 
         for export in exports {
-            if seen.insert(export.name.clone()) {
-                items.push(CompletionItem {
-                    label: export.name.clone(),
-                    kind: Some(to_lsp_completion_kind(export.kind)),
-                    detail: Some("(workspace)".to_string()),
-                    ..Default::default()
-                });
+            // already imported
+            if import_ctx.existing_imports.contains(&export.name) {
+                continue;
             }
+
+            if !seen.insert(export.name.clone()) {
+                continue;
+            }
+
+            let edit = make_import_edit(&module_name, &export.name, import_ctx.insert_line);
+
+            items.push(CompletionItem {
+                label: export.name.clone(),
+                kind: Some(to_lsp_completion_kind(export.kind)),
+                detail: Some(format!("from {}", module_name)),
+                additional_text_edits: Some(vec![edit]),
+                sort_text: Some(format!("~{}", export.name)), // sort after local symbols
+                ..Default::default()
+            });
         }
     }
 }
