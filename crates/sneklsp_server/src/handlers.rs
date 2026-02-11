@@ -381,12 +381,6 @@ pub fn handle_outgoing_calls(
         .and_then(|d| serde_json::from_value(d.clone()).ok())?;
     let symbol = query.index.symbol(symbol_id)?;
 
-    let func_scope = query
-        .index
-        .scopes()
-        .iter()
-        .find(|s| s.kind == sneklsp_index::ScopeKind::Function && s.range == symbol.range)?;
-
     let mut calls = Vec::new();
 
     for reference in query.index.references() {
@@ -1468,6 +1462,23 @@ pub fn handle_code_action(
 
     let mut actions = Vec::new();
 
+    remove_unused_import_actions(&query, &uri, &params.range, &mut actions);
+    sort_imports_action(&query, &uri, &mut actions);
+    add_missing_self_actions(&query, &uri, &params.range, &mut actions);
+
+    if actions.is_empty() {
+        None
+    } else {
+        Some(actions)
+    }
+}
+
+fn remove_unused_import_actions(
+    query: &DocumentQuery<'_>,
+    uri: &Uri,
+    cursor_range: &Range,
+    actions: &mut Vec<CodeActionOrCommand>,
+) {
     for symbol in query.index.symbols() {
         if !matches!(
             symbol.kind,
@@ -1482,15 +1493,11 @@ pub fn handle_code_action(
         }
 
         let symbol_range = to_lsp_range(symbol.selection_range, query.line_index);
-
-        // only offer action if cursor/selection overlaps the unused import
-        if !ranges_overlap_lsp(params.range, symbol_range) {
+        if !ranges_overlap_lsp(*cursor_range, symbol_range) {
             continue;
         }
 
         let name = query.index.symbol_name(symbol);
-
-        // compute the range to delete: the entire line containing the import
         let full_line_range = line_range_for_symbol(symbol, query.line_index);
 
         let mut changes = HashMap::new();
@@ -1517,11 +1524,237 @@ pub fn handle_code_action(
             data: None,
         }));
     }
+}
 
-    if actions.is_empty() {
-        None
-    } else {
-        Some(actions)
+fn sort_imports_action(
+    query: &DocumentQuery<'_>,
+    uri: &Uri,
+    actions: &mut Vec<CodeActionOrCommand>,
+) {
+    let source = query.index.source();
+
+    let mut import_entries: Vec<(u32, u32, String)> = Vec::new(); // (start_line, end_line, text)
+
+    for symbol in query.index.symbols() {
+        if !matches!(
+            symbol.kind,
+            sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
+        ) {
+            continue;
+        }
+
+        // top-level/module-scoped imports
+        if symbol.scope != 0 {
+            continue;
+        }
+
+        let start_pos = query.line_index.position(symbol.range.start());
+        let end_pos = query.line_index.position(symbol.range.end());
+
+        let line_start_offset = query.line_index.offset(sneklsp_text::Position {
+            line: start_pos.line,
+            column: 0,
+        });
+        let next_line_offset = query.line_index.offset(sneklsp_text::Position {
+            line: end_pos.line + 1,
+            column: 0,
+        });
+
+        let text = match (line_start_offset, next_line_offset) {
+            (Some(start), Some(end)) => {
+                let s = start.to_usize();
+                let e = end.to_usize().min(source.len());
+                source[s..e].to_string()
+            }
+            (Some(start), None) => {
+                let s = start.to_usize();
+                let mut t = source[s..].to_string();
+                if !t.ends_with('\n') {
+                    t.push('\n');
+                }
+                t
+            }
+            _ => continue,
+        };
+
+        import_entries.push((start_pos.line, end_pos.line, text));
+    }
+
+    if import_entries.len() < 2 {
+        return;
+    }
+
+    // might already be sorted
+    let texts: Vec<&str> = import_entries.iter().map(|(_, _, t)| t.as_str()).collect();
+    let mut sorted_texts = texts.clone();
+    sorted_texts.sort_unstable_by(|a, b| import_sort_key(a).cmp(&import_sort_key(b)));
+
+    if texts == sorted_texts {
+        return;
+    }
+
+    let first_line = import_entries.iter().map(|(s, _, _)| *s).min().unwrap();
+    let last_line = import_entries.iter().map(|(_, e, _)| *e).max().unwrap();
+
+    let sorted_text: String = sorted_texts.into_iter().collect();
+
+    let range = Range {
+        start: Position {
+            line: first_line,
+            character: 0,
+        },
+        end: Position {
+            line: last_line + 1,
+            character: 0,
+        },
+    };
+
+    let mut changes = HashMap::new();
+    changes.insert(
+        uri.clone(),
+        vec![TextEdit {
+            range,
+            new_text: sorted_text,
+        }],
+    );
+
+    actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+        title: "Sort imports".to_string(),
+        kind: Some(CodeActionKind::SOURCE_ORGANIZE_IMPORTS),
+        diagnostics: None,
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        }),
+        command: None,
+        is_preferred: None,
+        disabled: None,
+        data: None,
+    }));
+}
+
+/// sort key: `from` imports after `import`, then alphabetical
+fn import_sort_key(line: &str) -> (u8, String) {
+    let trimmed = line.trim();
+    let group = if trimmed.starts_with("from") { 1 } else { 0 };
+    (group, trimmed.to_lowercase())
+}
+
+fn add_missing_self_actions(
+    query: &DocumentQuery<'_>,
+    uri: &Uri,
+    cursor_range: &Range,
+    actions: &mut Vec<CodeActionOrCommand>,
+) {
+    for scope in query.index.scopes() {
+        if scope.kind != sneklsp_index::ScopeKind::Class {
+            continue;
+        }
+
+        for &child_id in &scope.children {
+            let Some(child_scope) = query.index.scope(child_id) else {
+                continue;
+            };
+
+            if child_scope.kind != sneklsp_index::ScopeKind::Function {
+                continue;
+            }
+
+            let method = scope.symbols.iter().find_map(|&sym_id| {
+                let sym = query.index.symbol(sym_id)?;
+                if sym.kind == sneklsp_index::SymbolKind::Method && sym.range == child_scope.range {
+                    Some(sym)
+                } else {
+                    None
+                }
+            });
+
+            let Some(method_sym) = method else {
+                continue;
+            };
+
+            let method_name = query.index.symbol_name(method_sym);
+
+            // skip dunder
+            if method_name.starts_with("__") && method_name.ends_with("__") {
+                continue;
+            }
+
+            let method_range = to_lsp_range(method_sym.selection_range, query.line_index);
+            if !ranges_overlap_lsp(*cursor_range, method_range) {
+                continue;
+            }
+
+            // check if first param is self/cls
+            let has_self_or_cls = child_scope.symbols.iter().any(|&sym_id| {
+                let Some(sym) = query.index.symbol(sym_id) else {
+                    return false;
+                };
+                if sym.kind != sneklsp_index::SymbolKind::Parameter {
+                    return false;
+                }
+                let name = query.index.symbol_name(sym);
+                name == "self" || name == "cls"
+            });
+
+            if has_self_or_cls {
+                continue;
+            }
+
+            // find method opening paren
+            let source = query.index.source();
+            let name_end = method_sym.selection_range.end().to_usize();
+            let after_name = &source[name_end..];
+            let Some(paren_offset) = after_name.find('(') else {
+                continue;
+            };
+            let insert_offset = name_end + paren_offset + 1;
+
+            let has_params = child_scope.symbols.iter().any(|&sym_id| {
+                query
+                    .index
+                    .symbol(sym_id)
+                    .map_or(false, |s| s.kind == sneklsp_index::SymbolKind::Parameter)
+            });
+
+            let insert_text = if has_params { "self, " } else { "self" };
+            let insert_pos = query
+                .line_index
+                .position(sneklsp_text::TextSize::new(insert_offset as u32));
+
+            let position = Position {
+                line: insert_pos.line,
+                character: insert_pos.column,
+            };
+
+            let mut changes = HashMap::new();
+            changes.insert(
+                uri.clone(),
+                vec![TextEdit {
+                    range: Range {
+                        start: position,
+                        end: position,
+                    },
+                    new_text: insert_text.to_string(),
+                }],
+            );
+
+            actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: format!("Add 'self' parameter to '{}'", method_name),
+                kind: Some(CodeActionKind::QUICKFIX),
+                diagnostics: None,
+                edit: Some(WorkspaceEdit {
+                    changes: Some(changes),
+                    document_changes: None,
+                    change_annotations: None,
+                }),
+                command: None,
+                is_preferred: Some(true),
+                disabled: None,
+                data: None,
+            }));
+        }
     }
 }
 
