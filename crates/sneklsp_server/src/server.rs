@@ -300,7 +300,7 @@ impl Server {
             tracing::debug!(?uri, version, "debounce complete. submitting parse");
 
             let file_id = state.file_id;
-            let content = state.document.take_content_for_parse();
+            let content = state.document.content_for_parse();
             let path = self
                 .workspace
                 .vfs
@@ -544,13 +544,8 @@ impl Server {
             .set_overlay(file_id, content.clone(), version);
 
         let document = Document::new(content.clone(), version);
-        self.documents.insert(
-            uri.clone(),
-            DocumentState {
-                document,
-                file_id,
-            },
-        );
+        self.documents
+            .insert(uri.clone(), DocumentState { document, file_id });
 
         // schedule through debouncer instead of background parser
         self.debouncer.schedule(uri, version);
@@ -586,13 +581,8 @@ impl Server {
             });
 
             let document = Document::new(content, version);
-            self.documents.insert(
-                uri.clone(),
-                DocumentState {
-                    document,
-                    file_id,
-                },
-            );
+            self.documents
+                .insert(uri.clone(), DocumentState { document, file_id });
 
             self.debouncer.schedule(uri, version);
         };

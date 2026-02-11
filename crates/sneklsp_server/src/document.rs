@@ -25,28 +25,18 @@ impl Document {
         }
     }
 
-    pub fn take_content_for_parse(&mut self) -> String {
-        if let Some(index) = self.index.take() {
-            index.into_source()
-        } else {
-            self.content.clone()
-        }
+    pub fn content_for_parse(&self) -> String {
+        self.content.clone()
     }
 
     pub fn apply_changes(&mut self, changes: Vec<TextDocumentContentChangeEvent>, version: i32) {
-        if self.content.is_empty() {
-            if let Some(ref index) = self.index {
-                self.content = index.source().to_string();
-            }
-        }
-
         for change in changes {
             self.apply_change(change);
         }
         self.version = version;
         self.line_index = LineIndex::new(&self.content);
 
-        self.index = None; // invalidate index. content changed
+        self.index = None; // invalidate index
     }
 
     fn apply_change(&mut self, change: TextDocumentContentChangeEvent) {
@@ -97,15 +87,7 @@ impl Document {
     }
 
     #[inline]
-    pub fn set_index(&mut self, index: OwnedIndex, line_index: LineIndex) {
-        self.content = String::new();
-        self.line_index = line_index;
-        self.index = Some(index);
-    }
-
-    #[inline]
     pub fn set_index_from_analysis(&mut self, index: &OwnedIndex, line_index: &LineIndex) {
-        self.content = String::new();
         self.line_index = line_index.clone();
         self.index = Some(index.clone());
     }
