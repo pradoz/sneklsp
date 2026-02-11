@@ -5,8 +5,8 @@ use lsp_types::{
     FoldingRangeParams, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
     HoverParams, InlayHint, InlayHintKind, InlayHintLabel, InlayHintParams, Location,
     MarkupContent, MarkupKind, Position, Range, ReferenceParams, RenameParams, SelectionRange,
-    SelectionRangeParams, SignatureHelp, SignatureHelpParams, SignatureInformation, SymbolKind,
-    TextEdit, Uri, WorkspaceEdit,
+    SelectionRangeParams, SignatureHelp, SignatureHelpParams, SignatureInformation,
+    SymbolInformation, SymbolKind, TextEdit, Uri, WorkspaceEdit, WorkspaceSymbolParams,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1540,4 +1540,137 @@ fn add_builtin_completions(
             });
         }
     }
+}
+
+pub fn handle_workspace_symbol(
+    params: WorkspaceSymbolParams,
+    documents: &HashMap<Uri, DocumentState>,
+    analysis: &AnalysisHost,
+    workspace: &Workspace,
+) -> Option<Vec<SymbolInformation>> {
+    let query = params.query.to_lowercase();
+    let mut results = Vec::new();
+    let mut seen_files: HashSet<Uri> = HashSet::new();
+
+    // search open documents first
+    for (uri, state) in documents {
+        let Some(index) = state.document.index.as_ref() else {
+            continue;
+        };
+        seen_files.insert(uri.clone());
+        collect_matching_symbols(index, &state.document.line_index, uri, &query, &mut results);
+    }
+
+    // search workspace files not already covered
+    for file_id in analysis.file_ids() {
+        let vfs_path = workspace.vfs.file_path(file_id);
+        let Some(file_uri) = vfs_path.to_uri() else {
+            continue;
+        };
+
+        if seen_files.contains(&file_uri) {
+            continue;
+        }
+
+        // try salsa analysis first, then workspace state
+        if let Some(file_analysis) = analysis.analyze_file(file_id) {
+            if let Some(ref index) = file_analysis.index {
+                collect_matching_symbols(
+                    index,
+                    &file_analysis.line_index,
+                    &file_uri,
+                    &query,
+                    &mut results,
+                );
+                continue;
+            }
+        }
+
+        if let Some(file_state) = workspace.get_file_state(file_id) {
+            if let Some(ref index) = file_state.index {
+                collect_matching_symbols(
+                    index,
+                    &file_state.line_index,
+                    &file_uri,
+                    &query,
+                    &mut results,
+                );
+            }
+        }
+    }
+
+    if results.is_empty() {
+        None
+    } else {
+        Some(results)
+    }
+}
+
+fn collect_matching_symbols(
+    index: &OwnedIndex,
+    line_index: &LineIndex,
+    uri: &Uri,
+    query: &str,
+    results: &mut Vec<SymbolInformation>,
+) {
+    // only search top-level and class-level symbols for workspace search
+    for symbol in index.symbols() {
+        if !is_workspace_searchable(symbol) {
+            continue;
+        }
+
+        let name = index.symbol_name(symbol);
+
+        // empty query returns all symbols
+        if !query.is_empty() && !name.to_lowercase().contains(query) {
+            continue;
+        }
+
+        #[allow(deprecated)]
+        results.push(SymbolInformation {
+            name: name.to_string(),
+            kind: to_lsp_symbol_kind(symbol.kind),
+            tags: None,
+            deprecated: None,
+            location: Location {
+                uri: uri.clone(),
+                range: to_lsp_range(symbol.selection_range, line_index),
+            },
+            container_name: scope_container_name(index, symbol),
+        });
+    }
+}
+
+fn is_workspace_searchable(symbol: &SymbolData) -> bool {
+    matches!(
+        symbol.kind,
+        sneklsp_index::SymbolKind::Function
+            | sneklsp_index::SymbolKind::Class
+            | sneklsp_index::SymbolKind::Method
+            | sneklsp_index::SymbolKind::Variable
+            | sneklsp_index::SymbolKind::Import
+            | sneklsp_index::SymbolKind::ImportedSymbol
+            | sneklsp_index::SymbolKind::TypeAlias
+    )
+}
+
+fn scope_container_name(index: &OwnedIndex, symbol: &SymbolData) -> Option<String> {
+    if symbol.scope == 0 {
+        return None;
+    }
+
+    let scope = index.scope(symbol.scope)?;
+    let parent_scope_id = scope.parent?;
+    let parent_scope = index.scope(parent_scope_id)?;
+
+    // find the symbol that owns the parent scope
+    for &sym_id in &parent_scope.symbols {
+        if let Some(parent_sym) = index.symbol(sym_id) {
+            if parent_sym.range == scope.range {
+                return Some(index.symbol_name(parent_sym).to_string());
+            }
+        }
+    }
+
+    None
 }

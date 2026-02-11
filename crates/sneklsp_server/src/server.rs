@@ -12,7 +12,7 @@ use lsp_types::request::{
     CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
     FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, PrepareRenameRequest,
     References, Rename, Request as _, SelectionRangeRequest, SemanticTokensFullRequest,
-    SemanticTokensRangeRequest, SignatureHelpRequest,
+    SemanticTokensRangeRequest, SignatureHelpRequest, WorkspaceSymbolRequest,
 };
 use lsp_types::{
     DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
@@ -57,8 +57,9 @@ pub fn run_server() -> Result<()> {
             trigger_characters: Some(vec![".".to_string()]),
             ..Default::default()
         }),
-        document_symbol_provider: Some(OneOf::Left(true)),
         definition_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(lsp_types::FoldingRangeProviderCapability::Simple(true)),
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         inlay_hint_provider: Some(OneOf::Left(true)),
@@ -83,7 +84,7 @@ pub fn run_server() -> Result<()> {
             retrigger_characters: Some(vec![",".to_string()]),
             work_done_progress_options: Default::default(),
         }),
-        document_highlight_provider: Some(OneOf::Left(true)),
+        workspace_symbol_provider: Some(lsp_types::OneOf::Left(true)),
         ..Default::default()
     };
 
@@ -447,6 +448,12 @@ impl Server {
                 self.send_response(id, result);
             }
 
+            DocumentHighlightRequest::METHOD => {
+                let (id, params) = cast_request::<DocumentHighlightRequest>(req)?;
+                let result = handlers::handle_document_highlight(params, &self.documents);
+                self.send_response(id, result);
+            }
+
             DocumentSymbolRequest::METHOD => {
                 let (id, params) = cast_request::<DocumentSymbolRequest>(req)?;
                 let result = handlers::handle_document_symbol(params, &self.documents);
@@ -529,9 +536,14 @@ impl Server {
                 self.send_response(id, result);
             }
 
-            DocumentHighlightRequest::METHOD => {
-                let (id, params) = cast_request::<DocumentHighlightRequest>(req)?;
-                let result = handlers::handle_document_highlight(params, &self.documents);
+            WorkspaceSymbolRequest::METHOD => {
+                let (id, params) = cast_request::<WorkspaceSymbolRequest>(req)?;
+                let result = handlers::handle_workspace_symbol(
+                    params,
+                    &self.documents,
+                    &self.analysis,
+                    &self.workspace,
+                );
                 self.send_response(id, result);
             }
 
