@@ -3,7 +3,7 @@ use salsa::Setter;
 
 use sneklsp_db::{
     Database, ExportedSymbol, File, FileAnalysis, ModuleEntry, ModuleGraph, ModuleName,
-    file_exported_symbols, file_line_index, parse_file_recovering, resolve_module,
+    file_exported_symbols, file_index, file_line_index, parse_file_recovering, resolve_module,
 };
 use sneklsp_index::OwnedIndex;
 use sneklsp_text::LineIndex;
@@ -97,7 +97,8 @@ impl AnalysisHost {
     }
 
     pub fn file_index(&self, file_id: FileId) -> Option<&OwnedIndex> {
-        self.analyze_file(file_id)?.index.as_ref()
+        let file = self.file_map.get(&file_id)?;
+        file_index(&self.db, *file).as_ref()
     }
 
     pub fn file_line_index(&self, file_id: FileId) -> Option<&LineIndex> {
@@ -127,8 +128,7 @@ impl AnalysisHost {
     }
 
     pub fn line_index(&self, file_id: FileId) -> Option<&LineIndex> {
-        let file = self.file_map.get(&file_id)?;
-        Some(file_line_index(&self.db, *file))
+        self.file_line_index(file_id)
     }
 
     #[inline]

@@ -190,6 +190,9 @@ fn lexer_token_type(kind: TokenKind) -> Option<u32> {
         TokenKind::True | TokenKind::False | TokenKind::None => Some(TT_KEYWORD),
         TokenKind::Int | TokenKind::Float => Some(TT_NUMBER),
         TokenKind::String | TokenKind::FString => Some(TT_STRING),
+        TokenKind::FStringStart | TokenKind::FStringLiteral | TokenKind::FStringEnd => {
+            Some(TT_STRING)
+        }
         TokenKind::Comment => Some(TT_COMMENT),
 
         TokenKind::Plus

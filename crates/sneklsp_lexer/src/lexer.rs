@@ -1,6 +1,12 @@
 use crate::{Token, TokenKind};
 use sneklsp_text::{TextRange, TextSize};
 
+struct FStringState {
+    quote: u8,
+    triple: bool,
+    brace_depth: u32,
+}
+
 pub struct Lexer<'src> {
     source: &'src str,
     bytes: &'src [u8],
@@ -10,6 +16,7 @@ pub struct Lexer<'src> {
     at_line_start: bool,
     done: bool,
     bracket_depth: u32,
+    fstring_stack: Vec<FStringState>,
 }
 
 impl<'src> Lexer<'src> {
@@ -27,6 +34,7 @@ impl<'src> Lexer<'src> {
             at_line_start: true,
             done: false,
             bracket_depth: 0,
+            fstring_stack: Vec::new(),
         }
     }
 
@@ -34,6 +42,12 @@ impl<'src> Lexer<'src> {
     pub fn next_token(&mut self) -> Token {
         if let Some(token) = self.pending_tokens.pop() {
             return token;
+        }
+
+        if let Some(fstate) = self.fstring_stack.last() {
+            if fstate.brace_depth == 0 {
+                return self.scan_fstring_content();
+            }
         }
 
         if self.at_line_start && !self.is_at_end() {
@@ -88,10 +102,22 @@ impl<'src> Lexer<'src> {
                 TokenKind::RBracket
             }
             b'{' => {
+                if let Some(fstate) = self.fstring_stack.last_mut() {
+                    fstate.brace_depth += 1;
+                }
                 self.bracket_depth += 1;
                 TokenKind::LBrace
             }
             b'}' => {
+                if let Some(fstate) = self.fstring_stack.last_mut() {
+                    if fstate.brace_depth > 0 {
+                        fstate.brace_depth -= 1;
+                        if fstate.brace_depth == 0 {
+                            self.decrement_bracket_depth();
+                            return self.make_token(TokenKind::RBrace, start, self.position);
+                        }
+                    }
+                }
                 self.decrement_bracket_depth();
                 TokenKind::RBrace
             }
@@ -245,6 +271,132 @@ impl<'src> Lexer<'src> {
         self.make_token(kind, start, self.position)
     }
 
+    fn scan_fstring_content(&mut self) -> Token {
+        let fstate = self.fstring_stack.last().unwrap();
+        let quote = fstate.quote;
+        let triple = fstate.triple;
+
+        // check for end of f-string
+        if self.is_at_end() {
+            self.fstring_stack.pop();
+            return self.make_token(TokenKind::Error, self.position, self.position);
+        }
+
+        // check for closing quote
+        if self.peek() == quote {
+            if triple {
+                if self.position + 2 < self.bytes.len()
+                    && self.bytes[self.position + 1] == quote
+                    && self.bytes[self.position + 2] == quote
+                {
+                    let start = self.position;
+                    self.position += 3;
+                    self.fstring_stack.pop();
+                    return self.make_token(TokenKind::FStringEnd, start, self.position);
+                }
+            } else {
+                let start = self.position;
+                self.position += 1;
+                self.fstring_stack.pop();
+                return self.make_token(TokenKind::FStringEnd, start, self.position);
+            }
+        }
+
+        // check for expression hole
+        if self.peek() == b'{' {
+            // `{{` is an escaped brace, not an expression hole
+            if self.peek_next() == b'{' {
+                // scan as literal including the escaped brace
+                return self.scan_fstring_literal(quote, triple);
+            }
+            let start = self.position;
+            self.advance();
+            self.fstring_stack.last_mut().unwrap().brace_depth = 1;
+            self.bracket_depth += 1;
+            return self.make_token(TokenKind::LBrace, start, self.position);
+        }
+
+        self.scan_fstring_literal(quote, triple)
+    }
+
+    fn scan_fstring_literal(&mut self, quote: u8, triple: bool) -> Token {
+        let start = self.position;
+
+        loop {
+            if self.is_at_end() {
+                break;
+            }
+
+            let byte = self.peek();
+
+            // escaped brace `{{` or `}}`
+            if byte == b'{' && self.peek_next() == b'{' {
+                self.position += 2;
+                continue;
+            }
+            if byte == b'}' && self.peek_next() == b'}' {
+                self.position += 2;
+                continue;
+            }
+
+            // expression hole start
+            if byte == b'{' {
+                break;
+            }
+
+            // closing quote
+            if byte == quote {
+                if triple {
+                    if self.position + 2 < self.bytes.len()
+                        && self.bytes[self.position + 1] == quote
+                        && self.bytes[self.position + 2] == quote
+                    {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            if byte == b'\\' {
+                self.advance();
+                if !self.is_at_end() {
+                    self.advance();
+                }
+                continue;
+            }
+
+            if byte == b'\n' && !triple {
+                break;
+            }
+
+            self.advance();
+        }
+
+        // only emit if we consumed something
+        if self.position > start {
+            self.make_token(TokenKind::FStringLiteral, start, self.position)
+        } else {
+            self.scan_fstring_content()
+        }
+    }
+
+    fn enter_fstring(&mut self, quote: u8) -> TokenKind {
+        let triple = self.peek() == quote && self.peek_next() == quote;
+        if triple {
+            self.advance();
+            self.advance();
+        }
+
+        self.fstring_stack.push(FStringState {
+            quote,
+            triple,
+            brace_depth: 0,
+        });
+
+        TokenKind::FStringStart
+    }
+
     pub fn decrement_bracket_depth(&mut self) {
         self.bracket_depth = self.bracket_depth.saturating_sub(1);
     }
@@ -258,7 +410,6 @@ impl<'src> Lexer<'src> {
             let mut indent = 0;
             let indent_start = self.position;
 
-            // find indentation level
             while !self.is_at_end() {
                 match self.peek() {
                     b' ' => {
@@ -273,7 +424,6 @@ impl<'src> Lexer<'src> {
                 }
             }
 
-            // skip commented/blank lines
             match self.peek() {
                 b'\n' => {
                     self.advance();
@@ -286,7 +436,6 @@ impl<'src> Lexer<'src> {
                         self.advance();
                         continue;
                     }
-                    // comment at EOF
                     if self.is_at_end() {
                         return self.pending_tokens.pop();
                     }
@@ -294,7 +443,6 @@ impl<'src> Lexer<'src> {
                 _ => {}
             }
 
-            // not blank, not acomment
             if self.is_at_end() {
                 return None;
             }
@@ -321,7 +469,6 @@ impl<'src> Lexer<'src> {
                 return self.pending_tokens.pop();
             }
 
-            // indent == current_indent, no token needed
             return None;
         }
     }
@@ -341,17 +488,16 @@ impl<'src> Lexer<'src> {
 
         if self.peek() == b'"' || self.peek() == b'\'' {
             let lower = text.to_lowercase();
+            let is_fstring = matches!(lower.as_str(), "f" | "fr" | "rf");
             if matches!(
                 lower.as_str(),
                 "f" | "r" | "b" | "fr" | "rf" | "br" | "rb" | "u"
             ) {
-                let is_fstring = matches!(lower.as_str(), "f" | "fr" | "rf");
                 let quote = self.advance();
-                let string_kind = self.scan_string(quote);
-                if string_kind == TokenKind::String && is_fstring {
-                    return TokenKind::FString;
+                if is_fstring {
+                    return self.enter_fstring(quote);
                 }
-                return string_kind;
+                return self.scan_string(quote);
             }
         }
 
@@ -574,14 +720,6 @@ mod tests {
     }
 
     #[test]
-    fn fstring_token() {
-        assert_eq!(lex("f'hello {x}'"), vec![TokenKind::FString]);
-        assert_eq!(lex("f\"hello\""), vec![TokenKind::FString]);
-        assert_eq!(lex("rf'raw {x}'"), vec![TokenKind::FString]);
-        assert_eq!(lex("fr'raw {x}'"), vec![TokenKind::FString]);
-    }
-
-    #[test]
     fn numbers() {
         assert_eq!(lex("42"), vec![TokenKind::Int]);
         assert_eq!(lex("6.9"), vec![TokenKind::Float]);
@@ -662,5 +800,133 @@ mod tests {
         let tokens = lex("if x:\n    # comment\n    y");
         assert!(tokens.contains(&TokenKind::Comment));
         assert!(tokens.contains(&TokenKind::Indent));
+    }
+
+    mod fstring {
+        use super::*;
+
+        #[test]
+        fn empty() {
+            let kinds = lex("f''");
+            assert_eq!(kinds, vec![TokenKind::FStringStart, TokenKind::FStringEnd]);
+        }
+
+        #[test]
+        fn simple() {
+            let kinds = lex("f'hello {x}'");
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::FStringStart,
+                    TokenKind::FStringLiteral, // "hello "
+                    TokenKind::LBrace,
+                    TokenKind::Name, // x
+                    TokenKind::RBrace,
+                    TokenKind::FStringEnd,
+                ]
+            );
+        }
+
+        #[test]
+        fn no_expr() {
+            let kinds = lex("f'hello world'");
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::FStringStart,
+                    TokenKind::FStringLiteral,
+                    TokenKind::FStringEnd,
+                ]
+            );
+        }
+
+        #[test]
+        fn multiple_exprs() {
+            let kinds = lex("f'{a} and {b}'");
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::FStringStart,
+                    TokenKind::LBrace,
+                    TokenKind::Name, // a
+                    TokenKind::RBrace,
+                    TokenKind::FStringLiteral, // " and "
+                    TokenKind::LBrace,
+                    TokenKind::Name, // b
+                    TokenKind::RBrace,
+                    TokenKind::FStringEnd,
+                ]
+            );
+        }
+
+        #[test]
+        fn escaped_braces() {
+            let kinds = lex("f'{{literal}}'");
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::FStringStart,
+                    TokenKind::FStringLiteral, // "{{literal}}"
+                    TokenKind::FStringEnd,
+                ]
+            );
+        }
+
+        #[test]
+        fn expression_with_call() {
+            let kinds = lex("f'{foo(1, 2)}'");
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::FStringStart,
+                    TokenKind::LBrace,
+                    TokenKind::Name, // foo
+                    TokenKind::LParen,
+                    TokenKind::Int, // 1
+                    TokenKind::Comma,
+                    TokenKind::Int, // 2
+                    TokenKind::RParen,
+                    TokenKind::RBrace,
+                    TokenKind::FStringEnd,
+                ]
+            );
+        }
+
+        #[test]
+        fn nested() {
+            let kinds = lex("f'{f\"{x}\"}'");
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::FStringStart, // f'
+                    TokenKind::LBrace,
+                    TokenKind::FStringStart, // f"
+                    TokenKind::LBrace,
+                    TokenKind::Name, // x
+                    TokenKind::RBrace,
+                    TokenKind::FStringEnd, // "
+                    TokenKind::RBrace,
+                    TokenKind::FStringEnd, // '
+                ]
+            );
+        }
+
+        #[test]
+        fn with_dict() {
+            let kinds = lex("f'{d[\"key\"]}'");
+            assert_eq!(
+                kinds,
+                vec![
+                    TokenKind::FStringStart,
+                    TokenKind::LBrace,
+                    TokenKind::Name, // d
+                    TokenKind::LBracket,
+                    TokenKind::String, // "key"
+                    TokenKind::RBracket,
+                    TokenKind::RBrace,
+                    TokenKind::FStringEnd,
+                ]
+            );
+        }
     }
 }

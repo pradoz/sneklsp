@@ -79,10 +79,25 @@ fn find_first_affected(tokens: &[Token], edit_start: TextSize) -> usize {
 fn find_safe_relex_start(tokens: &[Token], first_affected: usize) -> usize {
     for i in (0..first_affected).rev() {
         if matches!(tokens[i].kind, TokenKind::Newline | TokenKind::Dedent) {
-            return i + 1;
+            // don't start inside an f-string
+            if !is_inside_fstring(&tokens[..=i]) {
+                return i + 1;
+            }
         }
     }
     0
+}
+
+fn is_inside_fstring(tokens: &[Token]) -> bool {
+    let mut depth: u32 = 0;
+    for token in tokens {
+        match token.kind {
+            TokenKind::FStringStart => depth += 1,
+            TokenKind::FStringEnd => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    depth > 0
 }
 
 fn find_resume_point(

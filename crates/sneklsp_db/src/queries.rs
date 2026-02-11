@@ -121,9 +121,21 @@ pub fn file_line_index(db: &dyn salsa::Database, file: File) -> LineIndex {
     LineIndex::new(content)
 }
 
-pub fn file_index(db: &dyn salsa::Database, file: File) -> Option<&OwnedIndex> {
-    let analysis = parse_file_recovering(db, file);
-    analysis.index.as_ref()
+#[salsa::tracked(returns(ref))]
+pub fn file_index(db: &dyn salsa::Database, file: File) -> Option<OwnedIndex> {
+    let content = file.content(db);
+    let path = file.path(db);
+    tracing::debug!(path = %path, "indexing");
+
+    let arena = sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
+    let output = sneklsp_parser::parse_recovering(content, &arena);
+
+    if !output.module.body.is_empty() || output.errors.is_empty() {
+        let idx = sneklsp_index::index_module(content, &output.module);
+        Some(sneklsp_index::OwnedIndex::new(content.to_string(), &idx))
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -136,8 +148,7 @@ pub struct ExportedSymbol {
 
 #[salsa::tracked(returns(ref))]
 pub fn file_exported_symbols(db: &dyn salsa::Database, file: File) -> Vec<ExportedSymbol> {
-    let analysis = parse_file_recovering(db, file);
-    let Some(ref index) = analysis.index else {
+    let Some(ref index) = *file_index(db, file) else {
         return Vec::new();
     };
 

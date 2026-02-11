@@ -1353,6 +1353,7 @@ impl<'src, 'ast> Parser<'src, 'ast> {
                     self.arena.alloc(FStringExpr { values, range }),
                 ))
             }
+            TokenKind::FStringStart => self.parse_fstring(),
             TokenKind::True => {
                 self.advance();
                 Ok(Expression::Bool(
@@ -1380,6 +1381,114 @@ impl<'src, 'ast> Parser<'src, 'ast> {
             TokenKind::LBrace => self.parse_dict_or_set(),
             _ => Err(self.err("expression")),
         }
+    }
+
+    fn parse_fstring(&mut self) -> ParseResult<Expression<'ast>> {
+        let start = self.start();
+        self.advance();
+
+        let mut parts = Vec::new();
+
+        loop {
+            match self.current.kind {
+                TokenKind::FStringEnd => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::FStringLiteral => {
+                    let text = self.token_text();
+                    let literal = self.arena.alloc_str(text);
+                    parts.push(FStringPart::Literal(literal));
+                    self.advance();
+                }
+                TokenKind::LBrace => {
+                    let fv = self.parse_fstring_value()?;
+                    parts.push(FStringPart::FormattedValue(self.arena.alloc(fv)));
+                }
+                TokenKind::Eof => {
+                    if self.mode == ParseMode::Recovering {
+                        self.errors.push(ParseError::UnexpectedEof);
+                        break;
+                    }
+                    return Err(ParseError::UnexpectedEof);
+                }
+                _ => {
+                    if self.mode == ParseMode::Recovering {
+                        self.errors.push(self.err("f-string content"));
+                        self.advance();
+                    } else {
+                        return Err(self.err("f-string content"));
+                    }
+                }
+            }
+        }
+
+        let values = self.arena.alloc_slice(parts);
+        Ok(Expression::FString(self.arena.alloc(FStringExpr {
+            values,
+            range: self.range(start),
+        })))
+    }
+
+    fn parse_fstring_value(&mut self) -> ParseResult<FormattedValue<'ast>> {
+        let start = self.start();
+        self.advance();
+
+        let value = self.parse_expr()?;
+
+        // optional conversion: !s, !r, !a
+        let conversion = if self.check(TokenKind::Not) {
+            self.advance();
+            if self.check(TokenKind::Name) {
+                let conv_text = self.token_text();
+                let conv = conv_text.chars().next();
+                self.advance();
+                conv
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // optional format spec after `:`
+        // for now, consume everything until `}` as opaque text
+        let format_spec = if self.check(TokenKind::Colon) {
+            self.advance();
+            let spec_start = self.start();
+            let mut depth = 0u32;
+            while !self.at_end() {
+                if self.check(TokenKind::RBrace) && depth == 0 {
+                    break;
+                }
+                if self.check(TokenKind::LBrace) {
+                    depth += 1;
+                }
+                if self.check(TokenKind::RBrace) {
+                    depth = depth.saturating_sub(1);
+                }
+                self.advance();
+            }
+            let spec_end = self.start();
+            let spec_text = &self.source[spec_start.to_usize()..spec_end.to_usize()];
+            if !spec_text.is_empty() {
+                let literal = FStringPart::Literal(self.arena.alloc_str(spec_text));
+                Some(self.arena.alloc_slice([literal]) as &[FStringPart<'ast>])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        self.expect_close(TokenKind::RBrace)?;
+
+        Ok(FormattedValue {
+            value,
+            conversion,
+            format_spec,
+            range: self.range(start),
+        })
     }
 
     fn parse_paren(&mut self) -> ParseResult<Expression<'ast>> {

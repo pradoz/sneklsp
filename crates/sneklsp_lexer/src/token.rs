@@ -11,6 +11,11 @@ pub enum TokenKind {
     String,
     FString,
 
+    // f-string parts
+    FStringStart,
+    FStringLiteral,
+    FStringEnd,
+
     // keywords
     And,
     As,
