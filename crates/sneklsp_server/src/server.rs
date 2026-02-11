@@ -23,9 +23,7 @@ use lsp_types::{
 };
 
 use crate::analysis::AnalysisHost;
-use crate::background::{BackgroundParser, ParseResult};
 use crate::debouncer::Debouncer;
-use crate::diagnostics::{parse_diagnostics, semantic_diagnostics};
 use crate::document::Document;
 use crate::handlers;
 use sneklsp_vfs::{FileId, VfsPath};
@@ -123,7 +121,6 @@ pub fn run_server() -> Result<()> {
 
 pub struct DocumentState {
     pub document: Document,
-    pub pending_request_id: Option<u64>,
     pub file_id: FileId,
 }
 
@@ -131,7 +128,6 @@ struct Server {
     connection: Connection,
     documents: HashMap<Uri, DocumentState>,
     workspace: Workspace,
-    parser: BackgroundParser,
     debouncer: Debouncer,
     workspace_index_rx: Option<Receiver<(FileId, FileState)>>,
     analysis: AnalysisHost,
@@ -143,7 +139,6 @@ impl Server {
             connection,
             documents: HashMap::new(),
             workspace: Workspace::new(),
-            parser: BackgroundParser::new(),
             debouncer: Debouncer::new(),
             workspace_index_rx: None,
             analysis: AnalysisHost::new(),
@@ -285,13 +280,6 @@ impl Server {
                     }
                 }
 
-                // handle parse results from background thread
-                recv(self.parser.results()) -> result => {
-                    if let Ok(result) = result {
-                        self.handle_parse_result(result);
-                    }
-                }
-
                 recv(ticker) -> _ => {
                     self.process_debounced();
                     self.drain_workspace_index();
@@ -345,7 +333,6 @@ impl Server {
                     .document
                     .set_index_from_analysis(idx, &analysis.line_index);
             }
-            state.pending_request_id = None;
 
             let mut diagnostics = crate::diagnostics::serialized_errors_to_diagnostics(
                 &analysis.errors,
@@ -360,78 +347,6 @@ impl Server {
             }
             self.send_diagnostics(&uri, diagnostics);
         }
-    }
-
-    fn handle_parse_result(&mut self, result: ParseResult) {
-        let ParseResult {
-            uri,
-            version,
-            errors,
-            line_index,
-            request_id,
-            index,
-            tokens,
-        } = result;
-
-        if let Some(state) = self.documents.get_mut(&uri) {
-            // document might have changed since parse was requested
-            if state.document.version != version {
-                tracing::debug!(
-                    ?uri,
-                    result_version = version,
-                    current_version = state.document.version,
-                    "ignoring stale parse result"
-                );
-                return;
-            }
-
-            // ignore if newer parse request is pending
-            if let Some(pending_id) = state.pending_request_id {
-                if pending_id > request_id {
-                    tracing::debug!(
-                        ?uri,
-                        request_id,
-                        pending_id,
-                        "ignoring superseded parse result"
-                    );
-                    return;
-                }
-            }
-
-            state.document.set_tokens(tokens);
-            if let Some(idx) = index {
-                state.document.set_index(idx, line_index.clone());
-                tracing::debug!(?uri, "index updated");
-            }
-
-            state.pending_request_id = None;
-        } else {
-            // file is not open in editor but was indexed as part of workspace
-            if let Some(file_id) = self.workspace.lookup_uri(&uri) {
-                self.workspace.index_file(file_id);
-            }
-            return;
-        }
-
-        tracing::debug!(
-            ?uri,
-            version,
-            error_count = errors.len(),
-            "publishing diagnostics"
-        );
-
-        let mut diagnostics = parse_diagnostics(&errors, &line_index);
-        if let Some(state) = self.documents.get(&uri) {
-            if let Some(index) = state.document.index.as_ref() {
-                diagnostics.extend(semantic_diagnostics(
-                    index,
-                    &state.document.line_index,
-                    &self.analysis,
-                ));
-            }
-        }
-
-        self.send_diagnostics(&uri, diagnostics);
     }
 
     fn handle_request(&mut self, req: Request) -> Result<()> {
@@ -628,20 +543,17 @@ impl Server {
             .vfs
             .set_overlay(file_id, content.clone(), version);
 
-        // submit for background parsing. content is restored when result arrives
         let document = Document::new(content.clone(), version);
-        let request_id =
-            self.parser
-                .parse(uri.clone(), content, version, Vec::new(), false, None, None);
-
         self.documents.insert(
-            uri,
+            uri.clone(),
             DocumentState {
                 document,
-                pending_request_id: request_id,
                 file_id,
             },
         );
+
+        // schedule through debouncer instead of background parser
+        self.debouncer.schedule(uri, version);
 
         Ok(())
     }
@@ -678,7 +590,6 @@ impl Server {
                 uri.clone(),
                 DocumentState {
                     document,
-                    pending_request_id: None,
                     file_id,
                 },
             );

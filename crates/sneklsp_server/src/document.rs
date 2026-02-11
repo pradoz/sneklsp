@@ -1,13 +1,7 @@
 use lsp_types::TextDocumentContentChangeEvent;
 use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::Token;
-use sneklsp_text::{LineIndex, TextRange, TextSize};
-
-#[derive(Debug, Clone)]
-pub struct EditRecord {
-    pub range: TextRange,
-    pub new_len: TextSize,
-}
+use sneklsp_text::LineIndex;
 
 #[derive(Debug)]
 pub struct Document {
@@ -15,7 +9,6 @@ pub struct Document {
     pub line_index: LineIndex,
     pub version: i32,
     pub index: Option<OwnedIndex>,
-    pub pending_edits: Vec<EditRecord>,
     pub tokens: Vec<Token>,
 }
 
@@ -28,7 +21,6 @@ impl Document {
             line_index,
             version,
             index: None,
-            pending_edits: Vec::new(),
             tokens: Vec::new(),
         }
     }
@@ -76,11 +68,6 @@ impl Document {
 
                     // bounds check
                     if start_usize <= end_usize && end_usize <= self.content.len() {
-                        self.pending_edits.push(EditRecord {
-                            range: TextRange::new(start, end),
-                            new_len: TextSize::new(change.text.len() as u32),
-                        });
-
                         self.content
                             .replace_range(start_usize..end_usize, &change.text);
                     } else {
@@ -101,7 +88,6 @@ impl Document {
 
     fn full_replace(&mut self, content: String) {
         self.content = content;
-        self.pending_edits.clear();
         self.tokens.clear();
         self.index = None;
     }
@@ -122,12 +108,5 @@ impl Document {
         self.content = String::new();
         self.line_index = line_index.clone();
         self.index = Some(index.clone());
-    }
-}
-
-impl From<(String, i32)> for Document {
-    #[inline]
-    fn from((content, version): (String, i32)) -> Self {
-        Self::new(content, version)
     }
 }

@@ -1,5 +1,4 @@
 mod analysis;
-mod background;
 mod builtins;
 mod debouncer;
 mod diagnostics;
