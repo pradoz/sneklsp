@@ -31,7 +31,7 @@ pub struct AnalyzedSource {
 
 pub fn analyze_source(source: &str) -> AnalyzedSource {
     let line_index = LineIndex::new(source);
-    let arena = AstArena::with_capacity((source.len() & 50).max(4096));
+    let arena = AstArena::with_capacity((source.len() * 50).max(4096));
     let output = sneklsp_parser::parse_recovering(source, &arena);
     let tokens = sneklsp_lexer::tokenize(source);
 

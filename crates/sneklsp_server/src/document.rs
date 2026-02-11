@@ -1,7 +1,7 @@
 use lsp_types::TextDocumentContentChangeEvent;
 use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::Token;
-use sneklsp_text::LineIndex;
+use sneklsp_text::{LineIndex, TextRange};
 
 #[derive(Debug)]
 pub struct Document {
@@ -10,6 +10,7 @@ pub struct Document {
     pub version: i32,
     pub index: Option<OwnedIndex>,
     pub tokens: Vec<Token>,
+    pub last_edit_range: Option<TextRange>,
 }
 
 impl Document {
@@ -22,6 +23,7 @@ impl Document {
             version,
             index: None,
             tokens: Vec::new(),
+            last_edit_range: None,
         }
     }
 
@@ -56,8 +58,8 @@ impl Document {
                     let start_usize = start.to_usize();
                     let end_usize = end.to_usize();
 
-                    // bounds check
                     if start_usize <= end_usize && end_usize <= self.content.len() {
+                        self.last_edit_range = Some(TextRange::new(start, end));
                         self.content
                             .replace_range(start_usize..end_usize, &change.text);
                     } else {
@@ -80,6 +82,7 @@ impl Document {
         self.content = content;
         self.tokens.clear();
         self.index = None;
+        self.last_edit_range = None;
     }
 
     pub fn set_tokens(&mut self, tokens: Vec<Token>) {

@@ -27,6 +27,17 @@ pub fn semantic_diagnostics(
     collector.diagnostics
 }
 
+pub fn scoped_semantic_diagnostics(
+    index: &OwnedIndex,
+    line_index: &LineIndex,
+    analysis: &crate::analysis::AnalysisHost,
+    edit_range: sneklsp_text::TextRange,
+) -> Vec<Diagnostic> {
+    let mut collector = DiagnosticCollector::new(index, line_index, analysis);
+    collector.run_scoped(edit_range);
+    collector.diagnostics
+}
+
 struct DiagnosticCollector<'a> {
     index: &'a OwnedIndex,
     line_index: &'a LineIndex,
@@ -66,6 +77,11 @@ impl<'a> DiagnosticCollector<'a> {
         self.check_references();
         self.check_symbols();
         self.check_scopes();
+    }
+
+    fn run_scoped(&mut self, edit_range: sneklsp_text::TextRange) {
+        self.check_references_in_range(edit_range);
+        self.check_symbols_in_range(edit_range);
     }
 
     fn check_references(&mut self) {
@@ -147,6 +163,94 @@ impl<'a> DiagnosticCollector<'a> {
         for scope in self.index.scopes() {
             self.check_duplicate_definitions(scope);
             self.check_missing_self(scope);
+        }
+    }
+
+    fn check_references_in_range(&mut self, edit_range: sneklsp_text::TextRange) {
+        for reference in self.index.references() {
+            if !ranges_overlap_text(reference.range, edit_range) {
+                continue;
+            }
+
+            if reference.resolved.is_some() {
+                continue;
+            }
+
+            let name = self.index.reference_name(reference);
+
+            if crate::builtins::lookup(name).is_some() {
+                continue;
+            }
+
+            if name.starts_with("__") && name.ends_with("__") {
+                continue;
+            }
+
+            if self.cross_file_names.contains(name) {
+                continue;
+            }
+
+            self.push(
+                reference.range,
+                DiagnosticSeverity::WARNING,
+                format!("'{}' is possibly undefined", name),
+                None,
+            );
+        }
+    }
+
+    fn check_symbols_in_range(&mut self, edit_range: sneklsp_text::TextRange) {
+        let mut import_names: FxHashSet<String> = FxHashSet::default();
+
+        for symbol in self.index.symbols() {
+            if matches!(
+                symbol.kind,
+                sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol
+            ) {
+                import_names.insert(self.index.symbol_name(symbol).to_string());
+            }
+
+            if !ranges_overlap_text(symbol.range, edit_range) {
+                continue;
+            }
+
+            let name = self.index.symbol_name(symbol);
+            let has_refs = self.ref_counts.get(&symbol.id).copied().unwrap_or(0) > 0;
+
+            match symbol.kind {
+                sneklsp_index::SymbolKind::Import | sneklsp_index::SymbolKind::ImportedSymbol => {
+                    if !has_refs {
+                        self.push(
+                            symbol.selection_range,
+                            DiagnosticSeverity::HINT,
+                            format!("'{}' is imported but unused", name),
+                            Some(vec![DiagnosticTag::UNNECESSARY]),
+                        );
+                    }
+                }
+
+                sneklsp_index::SymbolKind::Variable => {
+                    if import_names.contains(name) {
+                        self.push(
+                            symbol.selection_range,
+                            DiagnosticSeverity::HINT,
+                            format!("'{}' shadows an import of the same name", name),
+                            None,
+                        );
+                    }
+
+                    if !has_refs && !name.starts_with('_') && symbol.scope != 0 {
+                        self.push(
+                            symbol.selection_range,
+                            DiagnosticSeverity::HINT,
+                            format!("'{}' is assigned but never used", name),
+                            Some(vec![DiagnosticTag::UNNECESSARY]),
+                        );
+                    }
+                }
+
+                _ => {}
+            }
         }
     }
 
@@ -282,6 +386,11 @@ impl<'a> DiagnosticCollector<'a> {
             data: None,
         });
     }
+}
+
+#[inline]
+fn ranges_overlap_text(a: sneklsp_text::TextRange, b: sneklsp_text::TextRange) -> bool {
+    a.start() < b.end() && b.start() < a.end()
 }
 
 #[inline]

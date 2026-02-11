@@ -289,6 +289,9 @@ impl Server {
 
             let file_id = state.file_id;
             let content = state.document.content_for_parse();
+            let edit_range = state.document.last_edit_range.take();
+            let old_index = state.document.index.clone();
+
             let path = self
                 .workspace
                 .vfs
@@ -305,11 +308,20 @@ impl Server {
             };
 
             let elapsed = start.elapsed();
+
+            let is_local_edit = match (&old_index, edit_range) {
+                (Some(idx), Some(range)) => {
+                    sneklsp_index::can_update_incrementally(idx, range).is_some()
+                }
+                _ => false,
+            };
+
             tracing::debug!(
                 ?uri,
                 ?elapsed,
                 error_count = analysis.errors.len(),
                 token_count = analysis.tokens.len(),
+                is_local_edit,
                 "salsa analysis complete"
             );
 
@@ -322,16 +334,28 @@ impl Server {
                     .set_index_from_analysis(idx, &analysis.line_index);
             }
 
+            // for local edits, only compute semantic diagnostics affected scope
             let mut diagnostics = crate::diagnostics::serialized_errors_to_diagnostics(
                 &analysis.errors,
                 &analysis.line_index,
             );
             if let Some(ref idx) = analysis.index {
-                diagnostics.extend(crate::diagnostics::semantic_diagnostics(
-                    idx,
-                    &analysis.line_index,
-                    &self.analysis,
-                ));
+                if is_local_edit {
+                    if let Some(range) = edit_range {
+                        diagnostics.extend(crate::diagnostics::scoped_semantic_diagnostics(
+                            idx,
+                            &analysis.line_index,
+                            &self.analysis,
+                            range,
+                        ));
+                    }
+                } else {
+                    diagnostics.extend(crate::diagnostics::semantic_diagnostics(
+                        idx,
+                        &analysis.line_index,
+                        &self.analysis,
+                    ));
+                }
             }
             self.send_diagnostics(&uri, diagnostics);
         }
