@@ -37,45 +37,6 @@ pub enum Expression<'ast> {
     Slice(&'ast SliceExpr<'ast>),
 }
 
-impl<'ast> Expression<'ast> {
-    pub const fn range(&self) -> TextRange {
-        match self {
-            Expression::Name(e) => e.range,
-            Expression::Int(e) => e.range,
-            Expression::Float(e) => e.range,
-            Expression::String(e) => e.range,
-            Expression::FString(e) => e.range,
-            Expression::Bytes(e) => e.range,
-            Expression::Bool(e) => e.range,
-            Expression::None(e) => e.range,
-            Expression::Ellipsis(e) => e.range,
-            Expression::BinOp(e) => e.range,
-            Expression::UnaryOp(e) => e.range,
-            Expression::BoolOp(e) => e.range,
-            Expression::Compare(e) => e.range,
-            Expression::Call(e) => e.range,
-            Expression::Attribute(e) => e.range,
-            Expression::Subscript(e) => e.range,
-            Expression::List(e) => e.range,
-            Expression::Tuple(e) => e.range,
-            Expression::Dict(e) => e.range,
-            Expression::Set(e) => e.range,
-            Expression::Lambda(e) => e.range,
-            Expression::IfExp(e) => e.range,
-            Expression::ListComp(e) => e.range,
-            Expression::SetComp(e) => e.range,
-            Expression::DictComp(e) => e.range,
-            Expression::GeneratorExp(e) => e.range,
-            Expression::Yield(e) => e.range,
-            Expression::YieldFrom(e) => e.range,
-            Expression::Await(e) => e.range,
-            Expression::Starred(e) => e.range,
-            Expression::Named(e) => e.range,
-            Expression::Slice(e) => e.range,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NameExpr<'ast> {
     pub id: Identifier<'ast>,

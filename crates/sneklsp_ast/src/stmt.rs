@@ -27,35 +27,6 @@ pub enum Statement<'ast> {
     Continue(&'ast ContinueStmt),
 }
 
-impl<'ast> Statement<'ast> {
-    pub const fn range(&self) -> TextRange {
-        match self {
-            Statement::FunctionDef(s) => s.range,
-            Statement::ClassDef(s) => s.range,
-            Statement::Return(s) => s.range,
-            Statement::Assign(s) => s.range,
-            Statement::AugAssign(s) => s.range,
-            Statement::AnnAssign(s) => s.range,
-            Statement::If(s) => s.range,
-            Statement::For(s) => s.range,
-            Statement::While(s) => s.range,
-            Statement::With(s) => s.range,
-            Statement::Try(s) => s.range,
-            Statement::Raise(s) => s.range,
-            Statement::Assert(s) => s.range,
-            Statement::Import(s) => s.range,
-            Statement::ImportFrom(s) => s.range,
-            Statement::Global(s) => s.range,
-            Statement::Nonlocal(s) => s.range,
-            Statement::Expr(s) => s.range,
-            Statement::Delete(s) => s.range,
-            Statement::Pass(s) => s.range,
-            Statement::Break(s) => s.range,
-            Statement::Continue(s) => s.range,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FunctionDef<'ast> {
     pub name: Identifier<'ast>,
