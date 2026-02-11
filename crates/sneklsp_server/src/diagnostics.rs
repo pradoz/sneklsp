@@ -5,17 +5,7 @@ use crate::analysis::AnalysisHost;
 use crate::handlers::to_lsp_range;
 use sneklsp_db::{ParseErrorKind, SerializedParseError};
 use sneklsp_index::OwnedIndex;
-use sneklsp_parser::ParseError;
 use sneklsp_text::LineIndex;
-
-#[inline]
-pub fn parse_diagnostics(errors: &[ParseError], line_index: &LineIndex) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::with_capacity(errors.len());
-    for e in errors {
-        diagnostics.push(to_parse_diagnostic(e, line_index));
-    }
-    diagnostics
-}
 
 pub fn serialized_errors_to_diagnostics(
     errors: &[SerializedParseError],
@@ -300,53 +290,6 @@ fn zero_width_range(line: u32, character: u32) -> Range {
     Range {
         start: position,
         end: position,
-    }
-}
-
-#[inline]
-fn to_parse_diagnostic(error: &ParseError, line_index: &LineIndex) -> Diagnostic {
-    let (range, message) = match error {
-        ParseError::UnexpectedToken {
-            range,
-            expected,
-            found,
-        } => (
-            to_lsp_range(*range, line_index),
-            format!("expected {expected}, found {found}"),
-        ),
-
-        ParseError::UnexpectedEof => {
-            let line = line_index.line_count().saturating_sub(1) as u32;
-            (
-                zero_width_range(line, 0),
-                "unexpected end of file".to_string(),
-            )
-        }
-
-        ParseError::InvalidSyntax(offset) => {
-            let pos = line_index.position(*offset);
-            let start = Position {
-                line: pos.line,
-                character: pos.column,
-            };
-            let end = Position {
-                line: pos.line,
-                character: pos.column + 1,
-            };
-            (Range { start, end }, "invalid syntax".to_string())
-        }
-    };
-
-    Diagnostic {
-        range,
-        severity: Some(DiagnosticSeverity::ERROR),
-        code: None,
-        code_description: None,
-        source: Some("sneklsp".to_string()),
-        message,
-        related_information: None,
-        tags: None,
-        data: None,
     }
 }
 
