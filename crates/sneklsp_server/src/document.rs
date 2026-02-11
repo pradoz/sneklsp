@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use lsp_types::TextDocumentContentChangeEvent;
+
 use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::Token;
 use sneklsp_text::{LineIndex, TextRange};
 
 #[derive(Debug)]
 pub struct Document {
-    content: String,
+    content: Arc<str>,
     pub line_index: LineIndex,
     pub version: i32,
     pub index: Option<OwnedIndex>,
@@ -18,7 +21,7 @@ impl Document {
     pub fn new(content: String, version: i32) -> Self {
         let line_index = LineIndex::new(&content);
         Self {
-            content,
+            content: Arc::from(content),
             line_index,
             version,
             index: None,
@@ -27,8 +30,9 @@ impl Document {
         }
     }
 
-    pub fn content_for_parse(&self) -> String {
-        self.content.clone()
+    #[inline]
+    pub fn content(&self) -> Arc<str> {
+        Arc::clone(&self.content)
     }
 
     pub fn apply_changes(&mut self, changes: Vec<TextDocumentContentChangeEvent>, version: i32) {
@@ -60,8 +64,9 @@ impl Document {
 
                     if start_usize <= end_usize && end_usize <= self.content.len() {
                         self.last_edit_range = Some(TextRange::new(start, end));
-                        self.content
-                            .replace_range(start_usize..end_usize, &change.text);
+                        let mut buf = String::from(&*self.content);
+                        buf.replace_range(start_usize..end_usize, &change.text);
+                        self.content = Arc::from(buf);
                     } else {
                         tracing::warn!("invalid change range. using full replacement");
                         self.full_replace(change.text);
@@ -79,7 +84,7 @@ impl Document {
     }
 
     fn full_replace(&mut self, content: String) {
-        self.content = content;
+        self.content = Arc::from(content);
         self.tokens.clear();
         self.index = None;
         self.last_edit_range = None;

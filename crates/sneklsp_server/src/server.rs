@@ -278,7 +278,7 @@ impl Server {
             tracing::debug!(?uri, version, "debounce complete. submitting parse");
 
             let file_id = state.file_id;
-            let content = state.document.content_for_parse();
+            let content = state.document.content();
             let edit_range = state.document.last_edit_range.take();
             let old_index = state.document.index.clone();
 
@@ -290,7 +290,8 @@ impl Server {
                 .display()
                 .to_string();
 
-            self.analysis.set_file_content(file_id, &path, content);
+            self.analysis
+                .set_file_content(file_id, &path, content.to_string());
 
             let start = std::time::Instant::now();
             let Some(analysis) = self.analysis.analyze_file(file_id) else {
