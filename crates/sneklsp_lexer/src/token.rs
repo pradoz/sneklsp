@@ -101,6 +101,9 @@ pub enum TokenKind {
     Indent,
     Dedent,
 
+    // comment
+    Comment,
+
     // fancy
     ColonEq,
     Ellipsis,

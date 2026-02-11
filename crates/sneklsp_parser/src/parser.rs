@@ -57,7 +57,12 @@ pub struct Parser<'src, 'ast> {
 impl<'src, 'ast> Parser<'src, 'ast> {
     pub fn new(source: &'src str, arena: &'ast AstArena) -> Self {
         let mut lexer = Lexer::new(source);
-        let current = lexer.next_token();
+        let mut current = lexer.next_token();
+
+        while current.kind == TokenKind::Comment {
+            current = lexer.next_token();
+        }
+
         Self {
             source,
             arena,
@@ -101,6 +106,10 @@ impl<'src, 'ast> Parser<'src, 'ast> {
     #[inline]
     fn advance(&mut self) {
         self.previous = std::mem::replace(&mut self.current, self.lexer.next_token());
+
+        while self.current.kind == TokenKind::Comment {
+            self.current = self.lexer.next_token();
+        }
     }
 
     #[inline]

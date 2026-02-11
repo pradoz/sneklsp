@@ -5,7 +5,7 @@ use lsp_types::{
 
 use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::{Token, TokenKind};
-use sneklsp_text::{LineIndex, TextRange, TextSize};
+use sneklsp_text::{LineIndex, TextRange};
 
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
     SemanticTokenType::NAMESPACE,
@@ -150,7 +150,6 @@ fn collect_lexer_tokens(
             modifiers: 0,
         });
     }
-    collect_comments(source, line_index, range_filter, raw);
 }
 
 fn lexer_token_type(kind: TokenKind) -> Option<u32> {
@@ -191,6 +190,7 @@ fn lexer_token_type(kind: TokenKind) -> Option<u32> {
         TokenKind::True | TokenKind::False | TokenKind::None => Some(TT_KEYWORD),
         TokenKind::Int | TokenKind::Float => Some(TT_NUMBER),
         TokenKind::String | TokenKind::FString => Some(TT_STRING),
+        TokenKind::Comment => Some(TT_COMMENT),
 
         TokenKind::Plus
         | TokenKind::Minus
@@ -218,70 +218,6 @@ fn lexer_token_type(kind: TokenKind) -> Option<u32> {
 
         _ => None,
     }
-}
-
-fn collect_comments(
-    source: &str,
-    line_index: &LineIndex,
-    range_filter: Option<lsp_types::Range>,
-    raw: &mut Vec<RawToken>,
-) {
-    for (byte_offset, _) in source.match_indices('#') {
-        let offset = TextSize::new(byte_offset as u32);
-        let pos = line_index.position(offset);
-
-        if let Some(ref filter) = range_filter {
-            if pos.line < filter.start.line || pos.line > filter.end.line {
-                continue;
-            }
-        }
-
-        let line_end = source[byte_offset..]
-            .find('\n')
-            .map(|p| byte_offset + p)
-            .unwrap_or(source.len());
-        let len = (line_end - byte_offset) as u32;
-
-        if len == 0 {
-            continue;
-        }
-
-        if likely_inside_string(source, byte_offset) {
-            continue;
-        }
-
-        raw.push(RawToken {
-            line: pos.line,
-            col: pos.column,
-            len,
-            token_type: TT_COMMENT,
-            modifiers: 0,
-        });
-    }
-}
-
-fn likely_inside_string(source: &str, offset: usize) -> bool {
-    let line_start = source[..offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
-    let before = &source[line_start..offset];
-
-    let mut single_quotes = 0u32;
-    let mut double_quotes = 0u32;
-    let bytes = before.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' {
-            i += 2;
-            continue;
-        }
-        match bytes[i] {
-            b'\'' => single_quotes += 1,
-            b'"' => double_quotes += 1,
-            _ => {}
-        }
-        i += 1;
-    }
-
-    single_quotes % 2 != 0 || double_quotes % 2 != 0
 }
 
 fn collect_semantic_tokens(
@@ -507,13 +443,7 @@ mod tests {
         };
 
         let has_comment = semantic.data.iter().any(|t| t.token_type == TT_COMMENT);
-        assert!(has_comment, "should detect comment");
-    }
-
-    #[test]
-    fn hash_in_string_not_comment() {
-        assert!(likely_inside_string("x = \"hello # world\"", 14));
-        assert!(!likely_inside_string("x = 1  # comment", 7));
+        assert!(has_comment, "should detect comment from lexer token");
     }
 
     #[test]

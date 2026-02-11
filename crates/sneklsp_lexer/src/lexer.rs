@@ -44,7 +44,9 @@ impl<'src> Lexer<'src> {
         }
 
         self.skip_whitespace();
-        self.skip_comment();
+        if let Some(comment) = self.scan_comment() {
+            return comment;
+        }
 
         if self.is_at_end() {
             if !self.done {
@@ -274,14 +276,15 @@ impl<'src> Lexer<'src> {
                     continue;
                 }
                 b'#' => {
-                    self.skip_comment();
+                    let comment = self.scan_comment().unwrap();
+                    self.pending_tokens.push(comment);
                     if !self.is_at_end() && self.peek() == b'\n' {
                         self.advance();
                         continue;
                     }
                     // comment at EOF
                     if self.is_at_end() {
-                        return None;
+                        return self.pending_tokens.pop();
                     }
                 }
                 _ => {}
@@ -453,11 +456,15 @@ impl<'src> Lexer<'src> {
     }
 
     #[inline]
-    fn skip_comment(&mut self) {
+    fn scan_comment(&mut self) -> Option<Token> {
         if !self.is_at_end() && self.peek() == b'#' {
+            let start = self.position;
             while !self.is_at_end() && self.peek() != b'\n' {
                 self.advance();
             }
+            Some(self.make_token(TokenKind::Comment, start, self.position))
+        } else {
+            None
         }
     }
 
@@ -641,5 +648,15 @@ mod tests {
     fn newline_outside_brackets_still_works() {
         let tokens = lex("x = 1\ny = 2");
         assert!(tokens.contains(&TokenKind::Newline));
+    }
+
+    #[test]
+    fn comment_tokens() {
+        let tokens = lex("x = 1  # comment");
+        assert!(tokens.contains(&TokenKind::Comment));
+
+        let tokens = lex("if x:\n    # comment\n    y");
+        assert!(tokens.contains(&TokenKind::Comment));
+        assert!(tokens.contains(&TokenKind::Indent));
     }
 }
