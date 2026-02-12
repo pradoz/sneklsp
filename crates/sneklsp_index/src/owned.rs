@@ -51,22 +51,33 @@ impl PositionalIndex {
 
     #[inline]
     fn find_innermost(entries: &[(u32, u32, u32)], offset: u32) -> Option<u32> {
-        let start_bound = entries.partition_point(|e| e.0 <= offset);
-        let mut best: Option<(u32, u32)> = None; // (width, index)
+        if entries.is_empty() {
+            return None;
+        }
 
-        for entry in entries[..start_bound].iter().rev() {
-            if entry.1 <= offset {
-                continue;
+        let partition = entries.partition_point(|e| e.0 <= offset);
+        if partition == 0 {
+            return None;
+        }
+
+        let mut best: Option<(u32, u32)> = None; // (width, index)
+        //
+        // all of these entries have start <= offset
+        for entry in entries[..partition].iter().rev() {
+            if let Some((best_width, _)) = best {
+                if offset - entry.0 >= best_width {
+                    break;
+                }
             }
-            // entry.0 <= offset < entry.1 — contains
-            let width = entry.1 - entry.0;
-            match best {
-                Some((bw, _)) if width < bw => best = Some((width, entry.2)),
-                None => best = Some((width, entry.2)),
-                _ => {}
-            }
-            if entry.0 + 1 < offset.saturating_sub(10000) {
-                break;
+
+            // check if contained
+            if offset < entry.1 {
+                let width = entry.1 - entry.0;
+                match best {
+                    Some((bw, _)) if width < bw => best = Some((width, entry.2)),
+                    None => best = Some((width, entry.2)),
+                    _ => {}
+                }
             }
         }
 

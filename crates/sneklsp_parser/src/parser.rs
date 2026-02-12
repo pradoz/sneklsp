@@ -1,8 +1,8 @@
+use crate::{ParseError, ParseResult};
+
 use sneklsp_ast::*;
 use sneklsp_lexer::{Lexer, Token, TokenKind};
 use sneklsp_text::{TextRange, TextSize};
-
-use crate::{ParseError, ParseResult};
 
 // precedence levels for binary operators
 const PREC_BITOR: u8 = 4;

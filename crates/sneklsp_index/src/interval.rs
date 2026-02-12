@@ -1,16 +1,16 @@
 use sneklsp_text::{TextRange, TextSize};
 
-/// TODO: use red-black interval tree
-///
 /// invariant: intervals are sorted by start position.
 #[derive(Debug, Clone)]
 pub struct IntervalTree<T> {
-    intervals: Vec<Interval<T>>,
+    entries: Vec<Entry<T>>,
 }
 
 #[derive(Debug, Clone)]
-struct Interval<T> {
-    range: TextRange,
+struct Entry<T> {
+    start: u32,
+    end: u32,
+    max_end: u32,
     value: T,
 }
 
@@ -18,39 +18,56 @@ impl<T: Copy> IntervalTree<T> {
     #[inline]
     pub fn new() -> Self {
         Self {
-            intervals: Vec::new(),
+            entries: Vec::new(),
         }
     }
 
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            intervals: Vec::with_capacity(capacity),
+            entries: Vec::with_capacity(capacity),
         }
     }
 
     #[inline]
     pub fn insert(&mut self, range: TextRange, value: T) {
-        self.intervals.push(Interval { range, value });
+        self.entries.push(Entry {
+            start: range.start().to_u32(),
+            end: range.end().to_u32(),
+            max_end: range.end().to_u32(),
+            value,
+        });
     }
 
     #[inline]
     pub fn finish(&mut self) {
-        self.intervals
-            .sort_unstable_by_key(|i| i.range.start().to_u32());
+        self.entries.sort_unstable_by_key(|e| e.start);
+
+        // build suffix-max for end values
+        let len = self.entries.len();
+        if len == 0 {
+            return;
+        }
+        let mut running_max = 0u32;
+        for i in (0..len).rev() {
+            if self.entries[i].end > running_max {
+                running_max = self.entries[i].end;
+            }
+            self.entries[i].max_end = running_max;
+        }
     }
 
     pub fn find_containing(&self, pos: TextSize) -> Vec<T> {
+        let p = pos.to_u32();
         let mut results = Vec::new();
 
-        for interval in &self.intervals {
-            // intervals are sorted by start position
-            if interval.range.start() > pos {
+        for entry in &self.entries {
+            if entry.start > p {
                 break;
             }
-
-            if interval.range.contains(pos) {
-                results.push(interval.value);
+            // pruning
+            if p < entry.end {
+                results.push(entry.value);
             }
         }
 
@@ -58,31 +75,33 @@ impl<T: Copy> IntervalTree<T> {
     }
 
     pub fn find_innermost(&self, pos: TextSize) -> Option<T> {
-        let mut best: Option<&Interval<T>> = None;
+        let p = pos.to_u32();
+        let mut best: Option<(u32, T)> = None;
 
-        for interval in &self.intervals {
-            if interval.range.start() > pos {
+        for entry in &self.entries {
+            if entry.start > p {
                 break;
             }
-
-            if interval.range.contains(pos) {
+            // pruning
+            if entry.max_end <= p {
+                continue;
+            }
+            if p < entry.end {
+                let width = entry.end - entry.start;
                 match best {
-                    // finds the smallest interval containing position
-                    Some(b) if interval.range.len() < b.range.len() => {
-                        best = Some(interval);
-                    }
-                    None => best = Some(interval),
+                    Some((bw, _)) if width < bw => best = Some((width, entry.value)),
+                    None => best = Some((width, entry.value)),
                     _ => {}
                 }
             }
         }
 
-        best.map(|i| i.value)
+        best.map(|(_, v)| v)
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.intervals.len()
+        self.entries.len()
     }
 }
 
@@ -127,5 +146,49 @@ mod tests {
         assert_eq!(tree.find_innermost(TextSize::new(25)), Some(2));
         assert_eq!(tree.find_innermost(TextSize::new(15)), Some(1));
         assert_eq!(tree.find_innermost(TextSize::new(5)), Some(0));
+    }
+
+    #[test]
+    fn empty_tree() {
+        let tree: IntervalTree<u32> = IntervalTree::new();
+        assert_eq!(tree.find_innermost(TextSize::new(0)), None);
+        assert!(tree.find_containing(TextSize::new(0)).is_empty());
+    }
+
+    #[test]
+    fn no_match() {
+        let mut tree = IntervalTree::new();
+        tree.insert(TextRange::new(TextSize::new(10), TextSize::new(20)), 0);
+        tree.finish();
+
+        assert_eq!(tree.find_innermost(TextSize::new(5)), None);
+        assert_eq!(tree.find_innermost(TextSize::new(25)), None);
+        assert!(tree.find_containing(TextSize::new(5)).is_empty());
+    }
+
+    #[test]
+    fn many_intervals() {
+        let mut tree = IntervalTree::new();
+        for i in 0..100u32 {
+            tree.insert(
+                TextRange::new(TextSize::new(i * 10), TextSize::new((i + 1) * 10 + 50)),
+                i,
+            );
+        }
+        tree.finish();
+
+        let result = tree.find_innermost(TextSize::new(55));
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn adjacent_intervals() {
+        let mut tree = IntervalTree::new();
+        tree.insert(TextRange::new(TextSize::new(0), TextSize::new(10)), 0);
+        tree.insert(TextRange::new(TextSize::new(10), TextSize::new(20)), 1);
+        tree.finish();
+
+        assert_eq!(tree.find_innermost(TextSize::new(10)), Some(1));
+        assert_eq!(tree.find_innermost(TextSize::new(9)), Some(0));
     }
 }
