@@ -310,6 +310,16 @@ impl Server {
                 _ => false,
             };
 
+            let state = self.documents.get_mut(&uri).unwrap();
+            if !state.document.tokens_dirty {
+                if let Some(tokens) = self.analysis.file_tokens(file_id) {
+                    state.document.set_tokens(tokens);
+                }
+            } else {
+                // relexed tokens are already in place, just clear the flag
+                state.document.tokens_dirty = false;
+            }
+
             tracing::debug!(
                 ?uri,
                 ?elapsed,
@@ -319,9 +329,6 @@ impl Server {
                 "salsa analysis complete"
             );
 
-            // reborrow state mutably after analysis
-            let state = self.documents.get_mut(&uri).unwrap();
-            state.document.set_tokens(tokens);
             if let Some(ref idx) = index {
                 state.document.set_index_from_analysis(idx, line_index);
             }
