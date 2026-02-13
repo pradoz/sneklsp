@@ -17,6 +17,7 @@ pub struct AnalysisHost {
     module_entries: Vec<ModuleEntry>,
     // (file_id, module_name, path, content)
     pending_modules: Vec<(FileId, String, String, String)>,
+    modules_dirty: bool,
 }
 
 impl AnalysisHost {
@@ -27,6 +28,7 @@ impl AnalysisHost {
             module_graph: None,
             module_entries: Vec::new(),
             pending_modules: Vec::new(),
+            modules_dirty: false,
         }
     }
 
@@ -71,13 +73,17 @@ impl AnalysisHost {
                 name: module_name,
                 file,
             });
+            self.modules_dirty = true;
         }
 
-        let entries = self.module_entries.clone();
-        if let Some(graph) = self.module_graph {
-            graph.set_entries(&mut self.db).to(entries);
-        } else {
-            self.module_graph = Some(ModuleGraph::new(&self.db, entries));
+        if self.modules_dirty {
+            let entries = self.module_entries.clone();
+            if let Some(graph) = self.module_graph {
+                graph.set_entries(&mut self.db).to(entries);
+            } else {
+                self.module_graph = Some(ModuleGraph::new(&self.db, entries));
+            }
+            self.modules_dirty = false;
         }
     }
 

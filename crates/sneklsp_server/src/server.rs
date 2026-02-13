@@ -321,7 +321,7 @@ impl Server {
 
             // reborrow state mutably after analysis
             let state = self.documents.get_mut(&uri).unwrap();
-            state.document.set_tokens(tokens.to_vec());
+            state.document.set_tokens(tokens);
             if let Some(ref idx) = index {
                 state.document.set_index_from_analysis(idx, line_index);
             }

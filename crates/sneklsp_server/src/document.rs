@@ -12,7 +12,7 @@ pub struct Document {
     pub line_index: LineIndex,
     pub version: i32,
     pub index: Option<OwnedIndex>,
-    pub tokens: Vec<Token>,
+    pub tokens: Arc<[Token]>,
     pub last_edit_range: Option<TextRange>,
 }
 
@@ -25,7 +25,7 @@ impl Document {
             line_index,
             version,
             index: None,
-            tokens: Vec::new(),
+            tokens: Arc::from([]),
             last_edit_range: None,
         }
     }
@@ -41,7 +41,6 @@ impl Document {
         }
         self.version = version;
         self.line_index = LineIndex::new(&self.content);
-
         self.index = None; // invalidate index
     }
 
@@ -85,13 +84,13 @@ impl Document {
 
     fn full_replace(&mut self, content: String) {
         self.content = Arc::from(content);
-        self.tokens.clear();
+        self.tokens = Arc::from([]);
         self.index = None;
         self.last_edit_range = None;
     }
 
-    pub fn set_tokens(&mut self, tokens: Vec<Token>) {
-        self.tokens = tokens;
+    pub fn set_tokens(&mut self, tokens: &[Token]) {
+        self.tokens = Arc::from(tokens);
     }
 
     #[inline]
