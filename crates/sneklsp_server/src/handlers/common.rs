@@ -167,3 +167,19 @@ pub fn get_document_query<'a>(
         uri,
     })
 }
+
+pub fn resolve_index_for_file<'a>(
+    file_uri: &Uri,
+    file_id: sneklsp_vfs::FileId,
+    documents: &'a HashMap<Uri, DocumentState>,
+    analysis: &'a crate::analysis::AnalysisHost,
+) -> Option<(&'a OwnedIndex, &'a LineIndex)> {
+    if let Some(state) = documents.get(file_uri) {
+        let idx = state.document.index.as_ref()?;
+        return Some((idx, &state.document.line_index));
+    }
+
+    let idx = analysis.file_index(file_id)?;
+    let li = analysis.file_line_index(file_id)?;
+    Some((idx, li))
+}

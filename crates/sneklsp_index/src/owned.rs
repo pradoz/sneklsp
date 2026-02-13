@@ -261,47 +261,15 @@ impl OwnedIndex {
     }
 
     #[inline]
-    pub fn symbol_name(&self, symbol: &SymbolData) -> &str {
-        let start = symbol.name_start as usize;
-        let end = start + symbol.name_len as usize;
-        &self.inner.source[start..end]
-    }
-
-    #[inline]
-    pub fn reference_name(&self, reference: &ReferenceData) -> &str {
-        let start = reference.name_start as usize;
-        let end = start + reference.name_len as usize;
-        &self.inner.source[start..end]
-    }
-
-    #[inline]
-    pub fn symbols(&self) -> &[SymbolData] {
-        &self.inner.symbols
-    }
-
-    #[inline]
-    pub fn scopes(&self) -> &[ScopeData] {
-        &self.inner.scopes
-    }
-
-    #[inline]
-    pub fn references(&self) -> &[ReferenceData] {
-        &self.inner.references
-    }
-
-    #[inline]
     pub fn symbol(&self, id: u32) -> Option<&SymbolData> {
         self.inner.symbols.get(id as usize)
     }
 
     #[inline]
-    pub fn scope(&self, id: u32) -> Option<&ScopeData> {
-        self.inner.scopes.get(id as usize)
-    }
-
-    #[inline]
-    pub fn root_scope(&self) -> Option<&ScopeData> {
-        self.inner.scopes.first()
+    pub fn symbol_name(&self, symbol: &SymbolData) -> &str {
+        let start = symbol.name_start as usize;
+        let end = start + symbol.name_len as usize;
+        &self.inner.source[start..end]
     }
 
     #[inline]
@@ -332,6 +300,56 @@ impl OwnedIndex {
         self.inner.symbols.get(idx as usize)
     }
 
+    #[inline]
+    pub fn reference_name(&self, reference: &ReferenceData) -> &str {
+        let start = reference.name_start as usize;
+        let end = start + reference.name_len as usize;
+        &self.inner.source[start..end]
+    }
+
+    #[inline]
+    pub fn scope(&self, id: u32) -> Option<&ScopeData> {
+        self.inner.scopes.get(id as usize)
+    }
+
+    #[inline]
+    pub fn root_scope(&self) -> Option<&ScopeData> {
+        self.inner.scopes.first()
+    }
+
+    pub fn find_scope_owner(
+        &self,
+        parent_scope: &ScopeData,
+        child_scope: &ScopeData,
+    ) -> Option<&SymbolData> {
+        parent_scope.symbols.iter().find_map(|&sym_id| {
+            let sym = self.symbol(sym_id)?;
+
+            if matches!(
+                sym.kind,
+                crate::SymbolKind::Function | crate::SymbolKind::Method | crate::SymbolKind::Class
+            ) && sym.range == child_scope.range
+            {
+                Some(sym)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn scope_has_self_or_cls(&self, scope: &ScopeData) -> bool {
+        scope.symbols.iter().any(|&sym_id| {
+            let Some(sym) = self.symbol(sym_id) else {
+                return false;
+            };
+            if sym.kind != crate::SymbolKind::Parameter {
+                return false;
+            }
+            let name = self.symbol_name(sym);
+            name == "self" || name == "cls"
+        })
+    }
+
     pub fn scope_at(&self, offset: sneklsp_text::TextSize) -> Option<&ScopeData> {
         let idx = PositionalIndex::find_innermost(&self.positional().scopes, offset.to_u32())?;
         self.inner.scopes.get(idx as usize)
@@ -347,6 +365,21 @@ impl OwnedIndex {
             .references
             .iter()
             .filter(move |r| r.resolved == Some(symbol_id))
+    }
+
+    #[inline]
+    pub fn symbols(&self) -> &[SymbolData] {
+        &self.inner.symbols
+    }
+
+    #[inline]
+    pub fn scopes(&self) -> &[ScopeData] {
+        &self.inner.scopes
+    }
+
+    #[inline]
+    pub fn references(&self) -> &[ReferenceData] {
+        &self.inner.references
     }
 }
 

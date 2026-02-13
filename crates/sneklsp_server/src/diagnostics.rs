@@ -307,37 +307,16 @@ impl<'a> DiagnosticCollector<'a> {
                 continue;
             }
 
-            let method_symbol = scope.symbols.iter().find_map(|&sym_id| {
-                let sym = self.index.symbol(sym_id)?;
-                if sym.kind == sneklsp_index::SymbolKind::Method && sym.range == child_scope.range {
-                    Some(sym)
-                } else {
-                    None
-                }
-            });
-
-            let Some(method) = method_symbol else {
+            let Some(method) = self.index.find_scope_owner(scope, child_scope) else {
                 continue;
             };
-
             let method_name = self.index.symbol_name(method);
 
             if method_name.starts_with("__") && method_name.ends_with("__") {
                 continue;
             }
 
-            let has_self_or_cls = child_scope.symbols.iter().any(|&sym_id| {
-                let Some(sym) = self.index.symbol(sym_id) else {
-                    return false;
-                };
-                if sym.kind != sneklsp_index::SymbolKind::Parameter {
-                    return false;
-                }
-                let name = self.index.symbol_name(sym);
-                name == "self" || name == "cls"
-            });
-
-            if !has_self_or_cls && !child_scope.symbols.is_empty() {
+            if !self.index.scope_has_self_or_cls(child_scope) && !child_scope.symbols.is_empty() {
                 let has_any_param = child_scope.symbols.iter().any(|&sym_id| {
                     self.index
                         .symbol(sym_id)

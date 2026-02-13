@@ -9,8 +9,8 @@ use lsp_types::{
 use rustc_hash::FxHashSet;
 
 use super::common::{
-    from_lsp_position, get_document_query, is_callable_symbol, scope_container_name, to_lsp_range,
-    to_lsp_symbol_kind,
+    from_lsp_position, get_document_query, is_callable_symbol, resolve_index_for_file,
+    scope_container_name, to_lsp_range, to_lsp_symbol_kind,
 };
 use crate::analysis::AnalysisHost;
 use crate::server::DocumentState;
@@ -102,7 +102,7 @@ fn resolve_import_definition(
             if let Some(exports) = analysis.exported_symbols(file_id) {
                 for export in exports {
                     if export.name == name {
-                        let line_index = analysis.line_index(file_id)?;
+                        let line_index = analysis.file_line_index(file_id)?;
                         let range = to_lsp_range(export.range, line_index);
                         return Some(Location {
                             uri: target_uri,
@@ -238,18 +238,9 @@ pub fn handle_incoming_calls(
             continue;
         }
 
-        let (index, line_index) = if let Some(state) = documents.get(&file_uri) {
-            match (state.document.index.as_ref(), &state.document.line_index) {
-                (Some(idx), li) => (idx, li),
-                _ => continue,
-            }
-        } else if let Some(idx) = analysis.file_index(file_id) {
-            let li = match analysis.file_line_index(file_id) {
-                Some(li) => li,
-                None => continue,
-            };
-            (idx, li)
-        } else {
+        let Some((index, line_index)) =
+            resolve_index_for_file(&file_uri, file_id, documents, analysis)
+        else {
             continue;
         };
 
@@ -288,21 +279,9 @@ fn collect_incoming_calls_in_file(
             continue;
         };
 
-        let caller = parent_scope.symbols.iter().find_map(|&sym_id| {
-            let sym = index.symbol(sym_id)?;
-            if matches!(
-                sym.kind,
-                sneklsp_index::SymbolKind::Function | sneklsp_index::SymbolKind::Method
-            ) && sym.range == scope.range
-            {
-                Some(sym)
-            } else {
-                None
-            }
-        });
-
-        let Some(caller_sym) = caller else { continue };
-
+        let Some(caller_sym) = index.find_scope_owner(parent_scope, scope) else {
+            continue;
+        };
         let caller_name = index.symbol_name(caller_sym).to_string();
 
         calls.push(CallHierarchyIncomingCall {
@@ -401,10 +380,10 @@ pub fn handle_workspace_symbol(
             continue;
         }
 
-        if let Some(index) = analysis.file_index(file_id) {
-            if let Some(line_index) = analysis.file_line_index(file_id) {
-                collect_matching_symbols(index, line_index, &file_uri, &query, &mut results);
-            }
+        if let Some((index, line_index)) =
+            resolve_index_for_file(&file_uri, file_id, documents, analysis)
+        {
+            collect_matching_symbols(index, line_index, &file_uri, &query, &mut results);
         }
     }
 
