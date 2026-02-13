@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-
 use lsp_types::Uri;
+use rustc_hash::FxHashMap;
 
 use crate::server::DocumentState;
 
 pub fn handle_semantic_tokens(
     params: lsp_types::SemanticTokensParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<lsp_types::SemanticTokensResult> {
     let uri = params.text_document.uri;
     let state = documents.get(&uri)?;
@@ -19,7 +18,7 @@ pub fn handle_semantic_tokens(
 
 pub fn handle_semantic_tokens_range(
     params: lsp_types::SemanticTokensRangeParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<lsp_types::SemanticTokensResult> {
     let uri = params.text_document.uri;
     let state = documents.get(&uri)?;

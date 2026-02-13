@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-
 use lsp_types::{
     CompletionItem, CompletionParams, CompletionResponse, Position, Range, TextEdit, Uri,
 };
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::common::{from_lsp_position, get_document_query, to_lsp_completion_kind};
 use crate::analysis::AnalysisHost;
@@ -20,7 +18,7 @@ struct ImportContext {
 
 pub fn handle_completion(
     params: CompletionParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
     analysis: &AnalysisHost,
     workspace: &Workspace,
 ) -> Option<CompletionResponse> {

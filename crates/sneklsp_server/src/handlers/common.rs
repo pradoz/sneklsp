@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use lsp_types::{CompletionItemKind, Location, Position, Range, SymbolKind, Uri};
+use rustc_hash::FxHashMap;
 
 use crate::server::DocumentState;
 use sneklsp_index::{OwnedIndex, SymbolData};
@@ -157,7 +156,7 @@ impl<'a> DocumentQuery<'a> {
 
 pub fn get_document_query<'a>(
     uri: &'a Uri,
-    documents: &'a HashMap<Uri, DocumentState>,
+    documents: &'a FxHashMap<Uri, DocumentState>,
 ) -> Option<DocumentQuery<'a>> {
     let state = documents.get(uri)?;
     let index = state.document.index.as_ref()?;
@@ -171,7 +170,7 @@ pub fn get_document_query<'a>(
 pub fn resolve_index_for_file<'a>(
     file_uri: &Uri,
     file_id: sneklsp_vfs::FileId,
-    documents: &'a HashMap<Uri, DocumentState>,
+    documents: &'a FxHashMap<Uri, DocumentState>,
     analysis: &'a crate::analysis::AnalysisHost,
 ) -> Option<(&'a OwnedIndex, &'a LineIndex)> {
     if let Some(state) = documents.get(file_uri) {

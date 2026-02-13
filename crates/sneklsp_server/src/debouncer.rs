@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::time::{Duration, Instant};
 
 use lsp_types::Uri;
@@ -6,7 +6,7 @@ use lsp_types::Uri;
 const DEFAULT_DEBOUNCE_MS: u64 = 50;
 
 pub struct Debouncer {
-    pending: HashMap<Uri, PendingWork>,
+    pending: FxHashMap<Uri, PendingWork>,
     delay: Duration,
 }
 
@@ -18,7 +18,7 @@ struct PendingWork {
 impl Debouncer {
     pub fn new() -> Self {
         Self {
-            pending: HashMap::new(),
+            pending: FxHashMap::default(),
             delay: Duration::from_millis(DEFAULT_DEBOUNCE_MS),
         }
     }
@@ -26,7 +26,7 @@ impl Debouncer {
     #[cfg(test)]
     pub fn with_delay_ms(ms: u64) -> Self {
         Self {
-            pending: HashMap::new(),
+            pending: FxHashMap::default(),
             delay: Duration::from_millis(ms),
         }
     }

@@ -4,6 +4,7 @@ use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
     Position, Range, TextEdit, Uri, WorkspaceEdit,
 };
+use rustc_hash::FxHashMap;
 
 use super::common::{
     DocumentQuery, from_lsp_position, get_document_query, ranges_overlap_lsp, to_lsp_range,
@@ -17,7 +18,7 @@ use sneklsp_workspace::Workspace;
 
 pub fn handle_rename(
     params: lsp_types::RenameParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
     analysis: &AnalysisHost,
     workspace: &Workspace,
 ) -> Option<WorkspaceEdit> {
@@ -70,7 +71,7 @@ fn find_cross_file_edits(
     origin_uri: &Uri,
     analysis: &AnalysisHost,
     workspace: &Workspace,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
     changes: &mut HashMap<Uri, Vec<TextEdit>>,
 ) {
     for file_id in analysis.file_ids() {
@@ -104,7 +105,7 @@ fn collect_edits_in_file(
     file_uri: &Uri,
     file_id: FileId,
     analysis: &AnalysisHost,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Vec<TextEdit> {
     let (index, line_index) = if let Some(state) = documents.get(file_uri) {
         match (state.document.index.as_ref(), &state.document.line_index) {
@@ -152,7 +153,7 @@ fn collect_edits_in_file(
 
 pub fn handle_prepare_rename(
     params: lsp_types::TextDocumentPositionParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<lsp_types::PrepareRenameResponse> {
     let uri = params.text_document.uri;
     let pos = params.position;
@@ -177,7 +178,7 @@ pub fn handle_prepare_rename(
 
 pub fn handle_code_action(
     params: CodeActionParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<CodeActionResponse> {
     let uri = params.text_document.uri;
     let query = get_document_query(&uri, documents)?;

@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-
 use lsp_types::{
     DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, FoldingRange, FoldingRangeKind,
     FoldingRangeParams, InlayHint, InlayHintKind, InlayHintLabel, InlayHintParams, Position, Range,
     SelectionRange, SelectionRangeParams, Uri,
 };
+use rustc_hash::FxHashMap;
 
 use super::common::{
     from_lsp_position, get_document_query, is_callable_symbol, to_lsp_range, to_lsp_symbol_kind,
@@ -15,7 +14,7 @@ use sneklsp_text::{LineIndex, TextRange, TextSize};
 
 pub fn handle_document_symbol(
     params: DocumentSymbolParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<DocumentSymbolResponse> {
     let uri = params.text_document.uri;
     let state = documents.get(&uri)?;
@@ -95,7 +94,7 @@ fn find_symbol_children(
 
 pub fn handle_folding_range(
     params: FoldingRangeParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<Vec<FoldingRange>> {
     let uri = params.text_document.uri;
     let query = get_document_query(&uri, documents)?;
@@ -198,7 +197,7 @@ fn fold_import_blocks(index: &OwnedIndex, line_index: &LineIndex, ranges: &mut V
 
 pub fn handle_selection_range(
     params: SelectionRangeParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<Vec<SelectionRange>> {
     let uri = params.text_document.uri;
     let query = get_document_query(&uri, documents)?;
@@ -298,7 +297,7 @@ fn build_selection_range(
 
 pub fn handle_inlay_hint(
     params: InlayHintParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<Vec<InlayHint>> {
     let uri = params.text_document.uri;
     let query = get_document_query(&uri, documents)?;

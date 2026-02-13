@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use lsp_types::{
     Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, SignatureHelp,
     SignatureHelpParams, SignatureInformation, Uri,
 };
+use rustc_hash::FxHashMap;
 
 use super::common::{
     DocumentQuery, from_lsp_position, get_document_query, is_callable_symbol, to_lsp_range,
@@ -23,7 +22,10 @@ enum CallTarget<'a> {
     Builtin(&'static BuiltinInfo),
 }
 
-pub fn handle_hover(params: HoverParams, documents: &HashMap<Uri, DocumentState>) -> Option<Hover> {
+pub fn handle_hover(
+    params: HoverParams,
+    documents: &FxHashMap<Uri, DocumentState>,
+) -> Option<Hover> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
 
@@ -113,7 +115,7 @@ fn format_symbol_signature(symbol: &SymbolData, index: &OwnedIndex) -> String {
 
 pub fn handle_signature_help(
     params: SignatureHelpParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<SignatureHelp> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;

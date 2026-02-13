@@ -1,12 +1,10 @@
-use std::collections::HashMap;
-
 use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
     CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
     GotoDefinitionParams, GotoDefinitionResponse, Location, Position, Range, ReferenceParams,
     SymbolInformation, Uri, WorkspaceSymbolParams,
 };
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::common::{
     from_lsp_position, get_document_query, is_callable_symbol, resolve_index_for_file,
@@ -20,7 +18,7 @@ use sneklsp_workspace::Workspace;
 
 pub fn handle_goto_definition(
     params: GotoDefinitionParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
     workspace: &Workspace,
     analysis: &AnalysisHost,
 ) -> Option<GotoDefinitionResponse> {
@@ -119,7 +117,7 @@ fn resolve_import_definition(
 
 pub fn handle_references(
     params: ReferenceParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<Vec<Location>> {
     let uri = params.text_document_position.text_document.uri;
     let pos = params.text_document_position.position;
@@ -148,7 +146,7 @@ pub fn handle_references(
 
 pub fn handle_document_highlight(
     params: lsp_types::DocumentHighlightParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<Vec<lsp_types::DocumentHighlight>> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -178,7 +176,7 @@ pub fn handle_document_highlight(
 
 pub fn handle_prepare_call_hierarchy(
     params: CallHierarchyPrepareParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<Vec<CallHierarchyItem>> {
     let uri = params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -208,7 +206,7 @@ pub fn handle_prepare_call_hierarchy(
 
 pub fn handle_incoming_calls(
     params: CallHierarchyIncomingCallsParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
     analysis: &AnalysisHost,
     workspace: &Workspace,
 ) -> Option<Vec<CallHierarchyIncomingCall>> {
@@ -302,7 +300,7 @@ fn collect_incoming_calls_in_file(
 
 pub fn handle_outgoing_calls(
     params: CallHierarchyOutgoingCallsParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
 ) -> Option<Vec<CallHierarchyOutgoingCall>> {
     let item = &params.item;
     let uri = &item.uri;
@@ -354,7 +352,7 @@ pub fn handle_outgoing_calls(
 
 pub fn handle_workspace_symbol(
     params: WorkspaceSymbolParams,
-    documents: &HashMap<Uri, DocumentState>,
+    documents: &FxHashMap<Uri, DocumentState>,
     analysis: &AnalysisHost,
     workspace: &Workspace,
 ) -> Option<Vec<SymbolInformation>> {

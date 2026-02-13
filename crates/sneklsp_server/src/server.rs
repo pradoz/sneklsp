@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -21,6 +20,7 @@ use lsp_types::{
     PublishDiagnosticsParams, SaveOptions, ServerCapabilities, ServerInfo,
     TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
 };
+use rustc_hash::FxHashMap;
 
 use crate::analysis::AnalysisHost;
 use crate::debouncer::Debouncer;
@@ -126,7 +126,7 @@ pub struct DocumentState {
 
 struct Server {
     connection: Connection,
-    documents: HashMap<Uri, DocumentState>,
+    documents: FxHashMap<Uri, DocumentState>,
     workspace: Workspace,
     debouncer: Debouncer,
     workspace_index_rx: Option<Receiver<(FileId, String, String)>>,
@@ -137,7 +137,7 @@ impl Server {
     fn new(connection: Connection) -> Self {
         Self {
             connection,
-            documents: HashMap::new(),
+            documents: FxHashMap::default(),
             workspace: Workspace::new(),
             debouncer: Debouncer::new(),
             workspace_index_rx: None,
