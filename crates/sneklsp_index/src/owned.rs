@@ -1,9 +1,9 @@
+use std::hash::Hash;
 use std::sync::{Arc, OnceLock};
 
 use crate::ModuleIndex;
 use sneklsp_text::TextRange;
 
-/// sorted by start
 struct PositionalIndex {
     /// (start, end, symbol_index)
     symbols: Vec<(u32, u32, u32)>,
@@ -95,6 +95,7 @@ pub struct OwnedIndexInner {
     scopes: Vec<ScopeData>,
     references: Vec<ReferenceData>,
     positional: OnceLock<PositionalIndex>,
+    content_hash: u64,
 }
 
 impl Clone for OwnedIndex {
@@ -109,7 +110,10 @@ impl Clone for OwnedIndex {
 impl PartialEq for OwnedIndex {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
+        if Arc::ptr_eq(&self.inner, &other.inner) {
+            return true;
+        }
+        self.inner.content_hash == other.inner.content_hash
     }
 }
 
@@ -118,7 +122,7 @@ impl Eq for OwnedIndex {}
 impl std::hash::Hash for OwnedIndex {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.inner).hash(state);
+        self.inner.content_hash.hash(state);
     }
 }
 
@@ -194,7 +198,7 @@ impl OwnedIndex {
                     signature_range,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let scopes = index
             .scopes()
@@ -207,7 +211,7 @@ impl OwnedIndex {
                 symbols: s.symbols.iter().map(|id| id.as_u32()).collect(),
                 children: s.children.iter().map(|id| id.as_u32()).collect(),
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let references = index
             .references()
@@ -223,7 +227,9 @@ impl OwnedIndex {
                     resolved: r.resolved.map(|id| id.as_u32()),
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+
+        let content_hash = compute_content_hash(&symbols, &scopes, &references);
 
         Self {
             inner: Arc::new(OwnedIndexInner {
@@ -232,6 +238,7 @@ impl OwnedIndex {
                 scopes,
                 references,
                 positional: OnceLock::new(),
+                content_hash,
             }),
         }
     }
@@ -482,4 +489,42 @@ mod tests {
         assert_eq!(owned, cloned);
         assert_eq!(owned.symbols().len(), cloned.symbols().len());
     }
+}
+
+fn compute_content_hash(
+    symbols: &[SymbolData],
+    scopes: &[ScopeData],
+    references: &[ReferenceData],
+) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = rustc_hash::FxHasher::default();
+    symbols.len().hash(&mut hasher);
+    for s in symbols {
+        s.id.hash(&mut hasher);
+        s.name_start.hash(&mut hasher);
+        s.name_len.hash(&mut hasher);
+        s.kind.hash(&mut hasher);
+        s.range.hash(&mut hasher);
+        s.selection_range.hash(&mut hasher);
+        s.scope.hash(&mut hasher);
+        s.visibility.hash(&mut hasher);
+    }
+    scopes.len().hash(&mut hasher);
+    for s in scopes {
+        s.id.hash(&mut hasher);
+        s.kind.hash(&mut hasher);
+        s.parent.hash(&mut hasher);
+        s.range.hash(&mut hasher);
+        s.symbols.hash(&mut hasher);
+        s.children.hash(&mut hasher);
+    }
+    references.len().hash(&mut hasher);
+    for r in references {
+        r.id.hash(&mut hasher);
+        r.name_start.hash(&mut hasher);
+        r.name_len.hash(&mut hasher);
+        r.range.hash(&mut hasher);
+        r.resolved.hash(&mut hasher);
+    }
+    hasher.finish()
 }
