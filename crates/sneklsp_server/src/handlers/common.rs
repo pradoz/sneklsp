@@ -70,8 +70,13 @@ pub fn ranges_overlap_lsp(a: Range, b: Range) -> bool {
 
 #[inline]
 pub fn is_callable_symbol(symbol: &SymbolData) -> bool {
+    is_callable_kind(symbol.kind)
+}
+
+#[inline]
+pub fn is_callable_kind(kind: sneklsp_index::SymbolKind) -> bool {
     matches!(
-        symbol.kind,
+        kind,
         sneklsp_index::SymbolKind::Function
             | sneklsp_index::SymbolKind::Class
             | sneklsp_index::SymbolKind::Method

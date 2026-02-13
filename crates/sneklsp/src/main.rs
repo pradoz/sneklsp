@@ -31,10 +31,9 @@ fn main() -> Result<()> {
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::from_default_env()
                         .add_directive(tracing::Level::INFO.into())
-                        .add_directive("lsp_server=warn".parse().unwrap())
-                        .add_directive("sneklsp=info".parse().unwrap()),
                 )
                 .with_writer(std::io::stderr)
+                .with_timer(tracing_subscriber::fmt::time::uptime())
                 .with_ansi(false)
                 .init();
 
