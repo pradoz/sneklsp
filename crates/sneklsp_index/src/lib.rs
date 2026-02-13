@@ -17,38 +17,7 @@ pub use scope::{Scope, ScopeId, ScopeKind};
 pub use symbol::{Symbol, SymbolId, SymbolKind, Visibility};
 
 use rustc_hash::FxHashMap;
-use sneklsp_ast::AstArena;
-use sneklsp_lexer::Token;
-use sneklsp_parser::ParseError;
-use sneklsp_text::{LineIndex, TextRange, TextSize};
-
-pub struct AnalyzedSource {
-    pub index: Option<OwnedIndex>,
-    pub line_index: LineIndex,
-    pub tokens: Vec<Token>,
-    pub errors: Vec<ParseError>,
-}
-
-pub fn analyze_source(source: &str) -> AnalyzedSource {
-    let line_index = LineIndex::new(source);
-    let arena = AstArena::with_capacity((source.len() * 50).max(4096));
-    let output = sneklsp_parser::parse_recovering(source, &arena);
-    let tokens = sneklsp_lexer::tokenize(source);
-
-    let index = if !output.module.body.is_empty() || output.errors.is_empty() {
-        let idx = index_module(source, &output.module);
-        Some(OwnedIndex::new(source.to_string(), &idx))
-    } else {
-        None
-    };
-
-    AnalyzedSource {
-        index,
-        line_index,
-        tokens,
-        errors: output.errors,
-    }
-}
+use sneklsp_text::{TextRange, TextSize};
 
 #[derive(Debug)]
 pub struct ModuleIndex<'src> {

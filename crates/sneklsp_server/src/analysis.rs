@@ -2,10 +2,11 @@ use rustc_hash::FxHashMap;
 use salsa::Setter;
 
 use sneklsp_db::{
-    Database, ExportedSymbol, File, FileAnalysis, ModuleEntry, ModuleGraph, ModuleName,
-    file_exported_symbols, file_index, file_line_index, parse_file_recovering, resolve_module,
+    Database, ExportedSymbol, File, ModuleEntry, ModuleGraph, ModuleName, file_exported_symbols,
+    file_index, file_line_index, file_parsed_data, file_tokens, resolve_module,
 };
 use sneklsp_index::OwnedIndex;
+use sneklsp_lexer::Token;
 use sneklsp_text::LineIndex;
 use sneklsp_vfs::FileId;
 
@@ -91,14 +92,22 @@ impl AnalysisHost {
         Some(file_exported_symbols(&self.db, *file))
     }
 
-    pub fn analyze_file(&self, file_id: FileId) -> Option<&FileAnalysis> {
-        let file = self.file_map.get(&file_id)?;
-        Some(parse_file_recovering(&self.db, *file))
-    }
-
     pub fn file_index(&self, file_id: FileId) -> Option<&OwnedIndex> {
         let file = self.file_map.get(&file_id)?;
         file_index(&self.db, *file).as_ref()
+    }
+
+    pub fn file_tokens(&self, file_id: FileId) -> Option<&[Token]> {
+        let file = self.file_map.get(&file_id)?;
+        Some(file_tokens(&self.db, *file))
+    }
+
+    pub fn file_parse_errors(
+        &self,
+        file_id: FileId,
+    ) -> Option<&[sneklsp_db::SerializedParseError]> {
+        let file = self.file_map.get(&file_id)?;
+        Some(&file_parsed_data(&self.db, *file).errors)
     }
 
     pub fn file_line_index(&self, file_id: FileId) -> Option<&LineIndex> {
@@ -125,10 +134,6 @@ impl AnalysisHost {
 
     pub fn file_for_id(&self, file_id: FileId) -> Option<File> {
         self.file_map.get(&file_id).copied()
-    }
-
-    pub fn line_index(&self, file_id: FileId) -> Option<&LineIndex> {
-        self.file_line_index(file_id)
     }
 
     #[inline]

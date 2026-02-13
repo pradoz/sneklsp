@@ -294,9 +294,12 @@ impl Server {
                 .set_file_content(file_id, &path, content.to_string());
 
             let start = std::time::Instant::now();
-            let Some(analysis) = self.analysis.analyze_file(file_id) else {
+            let Some(line_index) = self.analysis.file_line_index(file_id) else {
                 continue;
             };
+            let errors = self.analysis.file_parse_errors(file_id).unwrap_or_default();
+            let index = self.analysis.file_index(file_id).cloned();
+            let tokens = self.analysis.file_tokens(file_id).unwrap_or_default();
 
             let elapsed = start.elapsed();
 
@@ -310,32 +313,29 @@ impl Server {
             tracing::debug!(
                 ?uri,
                 ?elapsed,
-                error_count = analysis.errors.len(),
-                token_count = analysis.tokens.len(),
+                error_count = errors.len(),
+                token_count = tokens.len(),
                 is_local_edit,
                 "salsa analysis complete"
             );
 
             // reborrow state mutably after analysis
             let state = self.documents.get_mut(&uri).unwrap();
-            state.document.set_tokens(analysis.tokens.clone());
-            if let Some(ref idx) = analysis.index {
-                state
-                    .document
-                    .set_index_from_analysis(idx, &analysis.line_index);
+            state.document.set_tokens(tokens.to_vec());
+            if let Some(ref idx) = index {
+                state.document.set_index_from_analysis(idx, line_index);
             }
 
             // for local edits, only compute semantic diagnostics affected scope
-            let mut diagnostics = crate::diagnostics::serialized_errors_to_diagnostics(
-                &analysis.errors,
-                &analysis.line_index,
-            );
-            if let Some(ref idx) = analysis.index {
+            let mut diagnostics =
+                crate::diagnostics::serialized_errors_to_diagnostics(errors, line_index);
+
+            if let Some(ref idx) = index {
                 if is_local_edit {
                     if let Some(range) = edit_range {
                         diagnostics.extend(crate::diagnostics::scoped_semantic_diagnostics(
                             idx,
-                            &analysis.line_index,
+                            line_index,
                             &self.analysis,
                             range,
                         ));
@@ -343,7 +343,7 @@ impl Server {
                 } else {
                     diagnostics.extend(crate::diagnostics::semantic_diagnostics(
                         idx,
-                        &analysis.line_index,
+                        line_index,
                         &self.analysis,
                     ));
                 }

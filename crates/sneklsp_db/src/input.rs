@@ -1,10 +1,4 @@
 #[salsa::input]
-pub struct SourceProgram {
-    #[returns(ref)]
-    pub workspace_roots: Vec<String>,
-}
-
-#[salsa::input]
 pub struct File {
     #[returns(ref)]
     pub path: String,

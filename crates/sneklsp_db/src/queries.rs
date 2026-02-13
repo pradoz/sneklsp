@@ -3,11 +3,25 @@ use sneklsp_index::OwnedIndex;
 use sneklsp_lexer::Token;
 use sneklsp_text::LineIndex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ParseOutput {
-    pub error_count: u32,
-    pub stmt_count: u32,
-    pub has_errors: bool,
+#[derive(Debug, Clone)]
+pub struct ParsedFileData {
+    pub index: Option<OwnedIndex>,
+    pub errors: Vec<SerializedParseError>,
+}
+
+impl PartialEq for ParsedFileData {
+    fn eq(&self, other: &Self) -> bool {
+        self.errors == other.errors && self.index == other.index
+    }
+}
+
+impl Eq for ParsedFileData {}
+
+impl std::hash::Hash for ParsedFileData {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.errors.hash(state);
+        self.index.hash(state);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -46,32 +60,6 @@ impl From<&sneklsp_parser::ParseError> for SerializedParseError {
     }
 }
 
-#[derive(Debug)]
-pub struct FileAnalysis {
-    pub index: Option<OwnedIndex>,
-    pub line_index: LineIndex,
-    pub tokens: Vec<Token>,
-    pub errors: Vec<SerializedParseError>,
-}
-
-impl PartialEq for FileAnalysis {
-    fn eq(&self, other: &Self) -> bool {
-        self.errors == other.errors
-            && self.tokens == other.tokens
-            && self.index == other.index
-            && self.line_index == other.line_index
-    }
-}
-
-impl Eq for FileAnalysis {}
-
-impl std::hash::Hash for FileAnalysis {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.errors.len().hash(state);
-        self.tokens.len().hash(state);
-    }
-}
-
 #[salsa::tracked(returns(ref))]
 pub fn file_tokens(db: &dyn salsa::Database, file: File) -> Vec<Token> {
     let content = file.content(db);
@@ -79,63 +67,40 @@ pub fn file_tokens(db: &dyn salsa::Database, file: File) -> Vec<Token> {
     sneklsp_lexer::tokenize(content)
 }
 
-#[salsa::tracked]
-pub fn parse_file(db: &dyn salsa::Database, file: File) -> ParseOutput {
+#[salsa::tracked(returns(ref))]
+pub fn file_parsed_data(db: &dyn salsa::Database, file: File) -> ParsedFileData {
     let content = file.content(db);
-    tracing::debug!(path = %file.path(db), "parsing");
+    let path = file.path(db);
+    tracing::debug!(path = %path, "parsing + indexing");
 
     let arena = sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
     let output = sneklsp_parser::parse_recovering(content, &arena);
 
-    ParseOutput {
-        error_count: output.errors.len() as u32,
-        stmt_count: output.module.body.len() as u32,
-        has_errors: !output.errors.is_empty(),
-    }
-}
-
-#[salsa::tracked(returns(ref))]
-pub fn parse_file_recovering(db: &dyn salsa::Database, file: File) -> FileAnalysis {
-    let content = file.content(db);
-    let path = file.path(db);
-    tracing::debug!(path = %path, "full analysis");
-
-    let analyzed = sneklsp_index::analyze_source(content);
-    let errors: Vec<SerializedParseError> = analyzed
+    let errors: Vec<SerializedParseError> = output
         .errors
         .iter()
         .map(SerializedParseError::from)
         .collect();
 
-    FileAnalysis {
-        index: analyzed.index,
-        line_index: analyzed.line_index,
-        tokens: analyzed.tokens,
-        errors,
-    }
+    let index = if !output.module.body.is_empty() || output.errors.is_empty() {
+        let idx = sneklsp_index::index_module(content, &output.module);
+        Some(sneklsp_index::OwnedIndex::new(content.to_string(), &idx))
+    } else {
+        None
+    };
+
+    ParsedFileData { index, errors }
+}
+
+#[salsa::tracked(returns(ref))]
+pub fn file_index(db: &dyn salsa::Database, file: File) -> Option<OwnedIndex> {
+    file_parsed_data(db, file).index.clone()
 }
 
 #[salsa::tracked(returns(ref))]
 pub fn file_line_index(db: &dyn salsa::Database, file: File) -> LineIndex {
     let content = file.content(db);
     LineIndex::new(content)
-}
-
-#[salsa::tracked(returns(ref))]
-pub fn file_index(db: &dyn salsa::Database, file: File) -> Option<OwnedIndex> {
-    let content = file.content(db);
-    let path = file.path(db);
-    tracing::debug!(path = %path, "indexing");
-
-    let arena = sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
-    let output = sneklsp_parser::parse_recovering(content, &arena);
-
-    if !output.module.body.is_empty() || output.errors.is_empty() {
-        let idx = sneklsp_index::index_module(content, &output.module);
-        Some(sneklsp_index::OwnedIndex::new(content.to_string(), &idx))
-    } else {
-        None
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
