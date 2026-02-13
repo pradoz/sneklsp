@@ -8,17 +8,12 @@ pub fn find_affected_scopes(index: &OwnedIndex, edit_range: TextRange) -> Vec<u3
         if scope.kind == crate::ScopeKind::Module {
             continue; // module always overlaps
         }
-        if ranges_overlap(scope.range, edit_range) {
+        if scope.range.overlaps(edit_range) {
             affected.push(scope.id);
         }
     }
 
     affected
-}
-
-#[inline]
-fn ranges_overlap(a: TextRange, b: TextRange) -> bool {
-    a.start() < b.end() && b.start() < a.end()
 }
 
 pub fn can_update_incrementally(index: &OwnedIndex, edit_range: TextRange) -> Option<u32> {
@@ -41,23 +36,6 @@ pub fn can_update_incrementally(index: &OwnedIndex, edit_range: TextRange) -> Op
 mod tests {
     use super::*;
     use sneklsp_text::TextSize;
-
-    fn range(start: u32, end: u32) -> TextRange {
-        TextRange::new(TextSize::new(start), TextSize::new(end))
-    }
-    #[test]
-    fn ranges_overlap_basic() {
-        assert!(ranges_overlap(range(0, 10), range(5, 15)));
-        assert!(ranges_overlap(range(5, 15), range(0, 10)));
-        assert!(!ranges_overlap(range(0, 10), range(10, 20)));
-        assert!(!ranges_overlap(range(0, 10), range(20, 30)));
-    }
-
-    #[test]
-    fn ranges_overlap_contained() {
-        assert!(ranges_overlap(range(0, 100), range(25, 75)));
-        assert!(ranges_overlap(range(25, 75), range(0, 100)));
-    }
 
     #[test]
     fn single_function_is_incremental() {
@@ -94,7 +72,7 @@ mod tests {
         let owned = crate::OwnedIndex::new(source.to_string(), &idx);
 
         // edit at module level
-        let edit = range(0, 5);
+        let edit = TextRange::new(TextSize::new(0), TextSize::new(5));
         assert!(can_update_incrementally(&owned, edit).is_none());
     }
 }

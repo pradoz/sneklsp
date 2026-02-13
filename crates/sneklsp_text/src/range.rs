@@ -30,6 +30,11 @@ impl TextRange {
     }
 
     #[inline]
+    pub const fn overlaps(self, other: TextRange) -> bool {
+        self.start.to_u32() < other.end.to_u32() && other.start.to_u32() < self.end.to_u32()
+    }
+
+    #[inline]
     pub const fn contains(self, offset: TextSize) -> bool {
         self.start.to_u32() <= offset.to_u32() && offset.to_u32() < self.end.to_u32()
     }

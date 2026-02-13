@@ -338,22 +338,13 @@ impl Server {
                 crate::diagnostics::serialized_errors_to_diagnostics(errors, line_index);
 
             if let Some(ref idx) = index {
-                if is_local_edit {
-                    if let Some(range) = edit_range {
-                        diagnostics.extend(crate::diagnostics::scoped_semantic_diagnostics(
-                            idx,
-                            line_index,
-                            &self.analysis,
-                            range,
-                        ));
-                    }
-                } else {
-                    diagnostics.extend(crate::diagnostics::semantic_diagnostics(
-                        idx,
-                        line_index,
-                        &self.analysis,
-                    ));
-                }
+                let scope = if is_local_edit { edit_range } else { None };
+                diagnostics.extend(crate::diagnostics::semantic_diagnostics(
+                    idx,
+                    line_index,
+                    &self.analysis,
+                    scope,
+                ));
             }
             self.send_diagnostics(&uri, diagnostics);
         }

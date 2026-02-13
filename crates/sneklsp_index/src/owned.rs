@@ -302,11 +302,6 @@ impl OwnedIndex {
         }
     }
 
-    pub fn symbol_at(&self, offset: sneklsp_text::TextSize) -> Option<&SymbolData> {
-        let idx = PositionalIndex::find_innermost(&self.positional().symbols, offset.to_u32())?;
-        self.inner.symbols.get(idx as usize)
-    }
-
     #[inline]
     pub fn reference_name(&self, reference: &ReferenceData) -> &str {
         let start = reference.name_start as usize;
@@ -357,6 +352,11 @@ impl OwnedIndex {
         })
     }
 
+    pub fn symbol_at(&self, offset: sneklsp_text::TextSize) -> Option<&SymbolData> {
+        let idx = PositionalIndex::find_innermost(&self.positional().symbols, offset.to_u32())?;
+        self.inner.symbols.get(idx as usize)
+    }
+
     pub fn scope_at(&self, offset: sneklsp_text::TextSize) -> Option<&ScopeData> {
         let idx = PositionalIndex::find_innermost(&self.positional().scopes, offset.to_u32())?;
         self.inner.scopes.get(idx as usize)
@@ -372,6 +372,30 @@ impl OwnedIndex {
             .references
             .iter()
             .filter(move |r| r.resolved == Some(symbol_id))
+    }
+
+    pub fn resolve_name(&self, name: &str, from_scope_id: u32) -> Option<&SymbolData> {
+        let mut current = Some(from_scope_id);
+
+        while let Some(scope_id) = current {
+            let scope = self.scope(scope_id)?;
+
+            let skip = scope.kind == crate::ScopeKind::Class && scope_id != from_scope_id;
+
+            if !skip {
+                for &sym_id in &scope.symbols {
+                    if let Some(symbol) = self.symbol(sym_id) {
+                        if self.symbol_name(symbol) == name {
+                            return Some(symbol);
+                        }
+                    }
+                }
+            }
+
+            current = scope.parent;
+        }
+
+        None
     }
 
     #[inline]

@@ -138,7 +138,8 @@ fn detect_context<'a>(
     }
 
     let scope = index.scope_at(offset);
-    let symbol = find_name_in_scope(index, name, scope.map(|s| s.id));
+    let scope_id = scope.map(|s| s.id).unwrap_or(0);
+    let symbol = index.resolve_name(name, scope_id);
 
     match symbol {
         Some(sym)
@@ -170,30 +171,6 @@ fn find_enclosing_class_scope(index: &OwnedIndex, offset: TextSize) -> Option<u3
     } else {
         None
     }
-}
-
-fn find_name_in_scope<'a>(
-    index: &'a OwnedIndex,
-    name: &str,
-    scope_id: Option<u32>,
-) -> Option<&'a SymbolData> {
-    let mut current = scope_id;
-
-    while let Some(sid) = current {
-        let scope = index.scope(sid)?;
-
-        for &sym_id in &scope.symbols {
-            if let Some(symbol) = index.symbol(sym_id) {
-                if index.symbol_name(symbol) == name {
-                    return Some(symbol);
-                }
-            }
-        }
-
-        current = scope.parent;
-    }
-
-    None
 }
 
 fn collect_class_members(

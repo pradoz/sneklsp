@@ -8,6 +8,7 @@ use crate::discovery::discover_python_files;
 pub struct Workspace {
     pub vfs: Vfs,
     module_map: FxHashMap<String, FileId>,
+    reverse_module_map: FxHashMap<FileId, String>,
     roots: Vec<VfsPath>,
 }
 
@@ -16,6 +17,7 @@ impl Workspace {
         Self {
             vfs: Vfs::new(),
             module_map: FxHashMap::default(),
+            reverse_module_map: FxHashMap::default(),
             roots: Vec::new(),
         }
     }
@@ -34,6 +36,7 @@ impl Workspace {
             file_ids.push(file_id);
 
             if let Some(name) = module_name {
+                self.reverse_module_map.insert(file_id, name.clone());
                 self.module_map.insert(name, file_id);
             }
         }
@@ -52,11 +55,9 @@ impl Workspace {
         self.module_map.get(module_name).copied()
     }
 
+    #[inline]
     pub fn resolve_module_name(&self, file_id: FileId) -> Option<String> {
-        self.module_map
-            .iter()
-            .find(|(_, id)| **id == file_id)
-            .map(|(name, _)| name.clone())
+        self.reverse_module_map.get(&file_id).cloned()
     }
 
     pub fn file_id_for_uri(&mut self, uri: &lsp_types::Uri) -> Option<FileId> {
