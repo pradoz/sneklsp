@@ -4,6 +4,12 @@ use sneklsp_lexer::Token;
 use sneklsp_text::LineIndex;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParsedFileData {
+    pub errors: Vec<SerializedParseError>,
+    pub index: Option<OwnedIndex>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SerializedParseError {
     pub kind: ParseErrorKind,
     pub message: String,
@@ -47,36 +53,39 @@ pub fn file_tokens(db: &dyn salsa::Database, file: File) -> Vec<Token> {
 }
 
 #[salsa::tracked(returns(ref))]
-pub fn file_parse_errors(db: &dyn salsa::Database, file: File) -> Vec<SerializedParseError> {
+pub fn file_parsed_full(db: &dyn salsa::Database, file: File) -> ParsedFileData {
     let content = file.content(db);
     let path = file.path(db);
-    tracing::debug!(path = %path, "parsing (errors only)");
+
+    tracing::debug!(path = %path, "parsing and indexing");
 
     let arena = sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
     let output = sneklsp_parser::parse_recovering(content, &arena);
 
-    output
+    let errors: Vec<SerializedParseError> = output
         .errors
         .iter()
         .map(SerializedParseError::from)
-        .collect()
-}
+        .collect();
 
-#[salsa::tracked(returns(ref))]
-pub fn file_index(db: &dyn salsa::Database, file: File) -> Option<OwnedIndex> {
-    let content = file.content(db);
-    let path = file.path(db);
-    tracing::debug!(path = %path, "parsing + indexing");
-
-    let arena = sneklsp_ast::AstArena::with_capacity((content.len() * 50).max(4096));
-    let output = sneklsp_parser::parse_recovering(content, &arena);
-
-    if !output.module.body.is_empty() || output.errors.is_empty() {
+    let index = if !output.module.body.is_empty() || output.errors.is_empty() {
         let idx = sneklsp_index::index_module(content, &output.module);
         Some(sneklsp_index::OwnedIndex::new(content.to_string(), &idx))
     } else {
         None
-    }
+    };
+
+    ParsedFileData { errors, index }
+}
+
+#[salsa::tracked(returns(ref))]
+pub fn file_parse_errors(db: &dyn salsa::Database, file: File) -> Vec<SerializedParseError> {
+    file_parsed_full(db, file).errors.clone()
+}
+
+#[salsa::tracked(returns(ref))]
+pub fn file_index(db: &dyn salsa::Database, file: File) -> Option<OwnedIndex> {
+    file_parsed_full(db, file).index.clone()
 }
 
 #[salsa::tracked(returns(ref))]
